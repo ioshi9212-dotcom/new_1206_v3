@@ -1,0 +1,115 @@
+id: "char_id_knowledge" # knowledge file id / ID файла знаний
+slug: "char_slug" # character slug / папка персонажа
+file_type: "character_knowledge" # file type / тип файла
+version: "unified_character_knowledge_v1" # template version / версия шаблона
+status: "active" # active/off / активен или выключен
+
+knowledge_hint: "Коротко: что персонаж знает, чего не знает, что скрывает, что может раскрыть и как ведёт себя при давлении."
+
+# FILL RULES / ПРАВИЛА ЗАПОЛНЕНИЯ
+# English keys stay unchanged for AI. / Английские ключи не менять.
+# Russian comments explain fields for author. / Русские комментарии объясняют поля.
+# Keep every section. / Разделы не удалять.
+# unknown = not filled yet / не заполнено.
+# off = intentionally disabled / специально выключено.
+
+disclosure_levels: # disclosure scale / шкала раскрытия знаний
+  open: "можно говорить свободно / не секрет"
+  guarded: "не говорит первым, но может ответить при нормальном вопросе или доверии"
+  locked: "сильно скрывает; возможна только частичная правда при сильной сценической причине"
+  sealed: "абсолютный запрет; не раскрывает, не подтверждает, может молчать, уходить или врать"
+
+global_rules: # global knowledge rules / общие правила знаний
+  - "Знание персонажа не равно раскрытие в сцене."
+  - "Если факт не раскрыт Акире сценой, не писать его как знание Акиры."
+  - "Если факт закрыт, показывать только внешнюю реакцию персонажа: пауза, напряжение, уход от ответа, смена темы."
+  - "Если текущий POV не принадлежит этому персонажу, не писать его внутреннее знание напрямую."
+  - "Если персонаж чего-то не знает на старте, не давать ему это знание без сцены, документа, разговора или наблюдения."
+  - "Незнание не делает персонажа тупым: он может предполагать, проверять, ошибаться, молчать, врать или притворяться по характеру и цели."
+  - "Догадка персонажа не становится фактом, пока её не подтвердит сценический источник."
+
+starting_knowledge: # what character knows at story start / что персонаж знает на старте
+  enabled: true
+  about_lore: # lore knowledge / знания о лоре мира
+    enabled: true
+    items:
+      - id: "unknown"
+        fact: "unknown" # fact / факт
+        disclosure: "guarded" # open/guarded/locked/sealed / уровень раскрытия
+        reveal_rule: "unknown" # how can reveal / как можно раскрыть
+        can_lie: false # can lie about it / может ли врать
+        can_partial: true # can reveal partial truth / может ли сказать часть правды
+        visible_reaction: "unknown" # visible behavior if pressured / что видно снаружи
+        notes: "unknown" # author note / заметка автора
+
+  about_characters: # knowledge about characters / знания о персонажах
+    enabled: true
+    items:
+      - id: "unknown"
+        target: "unknown" # character id/name / о ком знание
+        fact: "unknown" # what knows / что знает
+        disclosure: "guarded" # open/guarded/locked/sealed / уровень раскрытия
+        reveal_rule: "unknown" # how can reveal / как можно раскрыть
+        can_lie: false # can lie / может ли врать
+        can_partial: true # can partial / может ли сказать частично
+        visible_reaction: "unknown" # visible reaction / внешняя реакция
+        notes: "unknown" # author note / заметка автора
+
+  about_events: # knowledge about events / знания о событиях
+    enabled: true
+    items:
+      - id: "unknown"
+        event: "unknown" # event / событие
+        fact: "unknown" # what knows / что знает
+        disclosure: "guarded" # open/guarded/locked/sealed / уровень раскрытия
+        reveal_rule: "unknown" # how can reveal / как можно раскрыть
+        can_lie: false
+        can_partial: true
+        visible_reaction: "unknown"
+        notes: "unknown"
+
+does_not_know_at_start: # unknown at start / чего персонаж НЕ знает на старте
+  enabled: true
+  items:
+    - id: "unknown"
+      fact: "unknown" # what does not know / чего не знает
+      rule: "Не давать это знание без сценического источника." # rule / правило
+      can_guess: false # can guess / может ли догадаться
+      guess_rule: "unknown" # if can guess, how / если может догадаться, то как
+
+wrong_beliefs: # wrong beliefs / ошибочные убеждения
+  enabled: true
+  items:
+    - id: "unknown"
+      belief: "unknown" # wrong belief / во что ошибочно верит
+      reason: "unknown" # why believes / почему так считает
+      correction_rule: "Может измениться только после сценического факта."
+      disclosure: "open"
+
+runtime_knowledge: # knowledge learned during play / знания, полученные в игре
+  enabled: true
+  rule: "Этот блок пополняется только после сцен, документов, разговоров, наблюдений или действий игрока."
+  items:
+    - id: "unknown"
+      learned_on: "unknown" # date/scene / когда узнал
+      source: "unknown" # source / источник знания
+      fact: "unknown" # new fact / новый факт
+      disclosure: "guarded" # open/guarded/locked/sealed / уровень раскрытия
+      reliability: "unknown" # true/false/partial/rumor/mistake / достоверность
+      notes: "unknown"
+
+question_response_rules: # how character answers questions / как отвечает на вопросы
+  enabled: true
+  if_open:
+    - "Может ответить прямо, если вопрос уместен."
+  if_guarded:
+    - "Не рассказывает первым."
+    - "Может ответить кратко, если доверяет или вопрос логичен."
+  if_locked:
+    - "Скрывает."
+    - "Может дать только часть правды при сильной сценической причине."
+    - "Может обрубить разговор, перевести тему, отложить ответ или солгать защитной полуправдой."
+  if_sealed:
+    - "Не раскрывает."
+    - "Не подтверждает."
+    - "Может солгать, промолчать, уйти или резко закрыть тему."
