@@ -1,0 +1,52 @@
+{
+  "id": "character_state_template",
+  "version": "v1",
+  "file_type": "character_dynamic_state_template",
+  "character_id": "example_character_id",
+  "purpose": "Dynamic personal memory for one character. This is not a static character card.",
+  "load_rule": [
+    "Load only when this character is active, nearby, directly observed, speaking, or strongly relevant to the current scene goal.",
+    "Do not load all character states by default."
+  ],
+  "current_status": {
+    "location": "unknown",
+    "physical_state": [],
+    "emotional_state_visible": [],
+    "internal_pressure": [],
+    "current_goal": [],
+    "current_limitations": []
+  },
+  "memory": {
+    "saw": [],
+    "heard": [],
+    "knows_as_fact": [],
+    "suspects": [],
+    "wrongly_believes": [],
+    "does_not_know": [],
+    "is_hiding": [],
+    "agreements": [],
+    "orders_or_duties": [],
+    "future_hooks": [],
+    "recent_scene_notes": []
+  },
+  "knowledge_source_rules": [
+    "Every important fact should keep source when possible: saw, heard, document, order, state, direct conversation.",
+    "Do not turn calendar, prompt or hidden lore into this character's knowledge.",
+    "If source is unclear, store it as suspicion, not confirmed fact."
+  ],
+  "protected_moments": [
+    {
+      "date": "YYYY-MM-DD",
+      "scene": "short scene name",
+      "trigger": "exact phrase/action or short paraphrase",
+      "why_it_matters_for_this_character": "reason based on personality/relationship/fear/duty/etc",
+      "future_hook": "how it may affect later reaction",
+      "status": "active"
+    }
+  ],
+  "compaction_notes": [
+    "Routine can be compressed.",
+    "Protected moments and unresolved hooks must stay.",
+    "If a memory matters emotionally, compress it but do not delete it."
+  ]
+}
