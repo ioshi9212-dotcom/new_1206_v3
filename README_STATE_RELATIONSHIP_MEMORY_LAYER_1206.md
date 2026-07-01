@@ -42,10 +42,10 @@ state/relationship_pairs/
   raiden__haru.json
   miki__alex.json
   ray__yuna.json
-  jun__akira.json
+  akira__jun.json
   jun__ray.json
-  irey__akira.json
-  emma__akira.json
+  akira__irey.json
+  akira__emma.json
 
 state/context_loading/
   character_memory_loading_rules_1206.json

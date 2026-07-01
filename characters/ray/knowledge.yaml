@@ -4,9 +4,9 @@ display_name: "Рэй"
 file_type: "character_knowledge"
 version: "1206_clean_v1"
 status: "active"
-load_mode: "always"
+load_mode: "conditional"
 
-knowledge_hint: "Постоянные знания Рэя на старт 1206. Держать только знания/незнания/правила раскрытия. Поведение — character.yaml, прошлые события — past.yaml, новые факты — state/character_knowledge/ray.json."
+knowledge_hint: "Постоянные знания Рэя на старт 1206. Держать только знания/незнания/правила раскрытия. Поведение — character.yaml, прошлые события — past.yaml, новые факты — state/character_memory/ray.json."
 
 disclosure_levels:
   open: "можно говорить свободно"
@@ -20,7 +20,7 @@ global_rules:
   - "Прямой вопрос Акиры не обязан открывать закрытый факт."
   - "Если факт закрыт, показывать внешнюю реакцию: пауза, сухость, раздражение, приказ, смена темы, молчание."
   - "Догадка Рэя не становится фактом без сцены, документа, разговора, наблюдения или отчёта."
-  - "Новые знания хранить в state/character_knowledge/ray.json."
+  - "Новые знания хранить в state/character_memory/ray.json."
 
 starting_knowledge:
   about_akira:
@@ -160,5 +160,5 @@ question_response_rules:
 
 runtime_knowledge:
   enabled: true
-  rule: "Новые знания Рэя добавлять только после сцен, документов, разговоров, наблюдений или действий игрока. Использовать state/character_knowledge/ray.json."
+  rule: "Новые знания Рэя добавлять только после сцен, документов, разговоров, наблюдений или действий игрока. Использовать state/character_memory/ray.json."
   items: []

@@ -43,4 +43,4 @@ ray_and_truth:
 not_in_this_file:
   - "Не хранить здесь подробные знания Рэя о каждом персонаже — это knowledge.yaml."
   - "Не хранить здесь манеру речи, привычки, кружки, контроль и реакции — это character.yaml."
-  - "Не добавлять текущие сценические события — это state/character_knowledge/ray.json или session state."
+  - "Не добавлять текущие сценические события — это state/character_memory/ray.json или session state."

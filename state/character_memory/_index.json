@@ -17,8 +17,8 @@
     "emma": "state/character_memory/emma.json"
   },
   "legacy_mapping": {
-    "old_path": "state/character_knowledge/<id>.json",
-    "new_path": "state/character_memory/<id>.json",
-    "note": "Existing code may still use character_knowledge. Migrate gradually or map old path to new dynamic memory schema."
+    "status": "archived_reference_only",
+    "current_dynamic_memory_path": "state/character_memory/<id>.json",
+    "note": "Do not create or write to the old dynamic memory layer. New scene facts are stored only in character_memory."
   }
 }

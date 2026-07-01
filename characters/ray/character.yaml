@@ -4,7 +4,7 @@ display_name: "Рэй"
 file_type: "character_profile"
 version: "1206_clean_v1"
 status: "active"
-load_mode: "always"
+load_mode: "conditional"
 
 character_hint: "Характер, речь и поведение Рэя. Не хранить здесь подробные знания/прошлое; факты вынесены в knowledge.yaml и past.yaml."
 
