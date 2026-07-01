@@ -1,56 +1,33 @@
 {
-  "id": "character_memory_irey",
-  "version": "v1",
+  "id": "irey",
   "file_type": "character_dynamic_memory",
-  "character_id": "irey",
-  "purpose": "Dynamic personal memory. Update through state writer; do not treat calendar/rules as character knowledge.",
-  "load_rule": [
-    "Load when this character is active, nearby, speaking, observing, directly referenced in scene goal, or must process a new fact.",
-    "Do not load this memory only because Akira is POV.",
-    "If absent, this character does not learn the scene automatically."
+  "version": "1206_irey_memory_v1",
+  "status": "active",
+  "scope": "Dynamic scene memory for Irey. Static knowledge stays in characters/irey/knowledge.yaml.",
+  "seen": [],
+  "heard": [],
+  "knows_as_fact": [],
+  "assumes": [
+    "Акира может помнить его и период у Самуэля, пока сцена не докажет обратное.",
+    "Райден и Акира могут помнить друг друга, пока сцена не докажет обратное."
   ],
-  "current_status": {
-    "date": "1206-08-31/start_or_pre_start",
-    "location": "unknown",
-    "availability": "conditional_1206-08-31",
-    "physical_state": [],
-    "emotional_state_visible": [],
-    "internal_pressure": [],
-    "current_goal": [
-      "Ищет/контактирует с Акирой по своим причинам и знаниям, не обязан быть полностью честным."
-    ],
-    "current_limitations": [],
-    "current_orders_or_duties": []
-  },
-  "memory": {
-    "saw": [],
-    "heard": [],
-    "knows_as_fact": [
-      "Знает Акиру или связан с её поиском в пределах своей карточки/state."
-    ],
-    "suspects": [],
-    "wrongly_believes": [],
-    "does_not_know": [
-      "Не знает автоматически выборы игрока и скрытые предметы Акиры.",
-      "Не знает то, что не видел/не слышал."
-    ],
-    "is_hiding": [],
-    "agreements": [],
-    "orders_or_duties": [],
-    "future_hooks": [
-      "Может быть источником информации, давления или недоверия."
-    ],
-    "recent_scene_notes": []
-  },
-  "knowledge_source_rules": [
-    "Facts here must come from direct experience, documents, orders, conversations, state updates or static character knowledge.",
-    "Calendar rules, loading rules and prompt instructions are not character knowledge.",
-    "If a fact is not sourced for this character, store it as suspicion or do not store it."
+  "misbelieves": [],
+  "does_not_know": [
+    "Не знает заранее, что у Акиры амнезия.",
+    "Не знает заранее, что поток/эмоции Акиры заблокированы.",
+    "Не знает, что происходило с Акирой последние два года.",
+    "Не знает связь Акиры и Джуна без сценического источника.",
+    "Не знает про записку или маршрут к Рэю без сценического источника."
   ],
+  "hides": [
+    "Скрывает от Эммы личную цель не отдавать Акиру системе Самуэля.",
+    "Скрывает кольцо Акиры, пока не поймёт состояние памяти Акиры и Райдена."
+  ],
+  "agreements": [],
   "protected_moments": [],
-  "compaction_notes": [
-    "Keep emotionally/logically important moments for this character.",
-    "Compress routine, not memory.",
-    "Keep source of knowledge when possible."
-  ]
+  "future_hooks": [
+    "Если Ирэй коснётся Акиры осознанно, может создать сенсорный якорь примерно на сутки при небольшой дистанции.",
+    "Если поймёт, что Акира его не помнит, это должно стать сильным внутренним сдвигом, но не поводом вывалить всю правду сразу."
+  ],
+  "last_scene_notes": []
 }
