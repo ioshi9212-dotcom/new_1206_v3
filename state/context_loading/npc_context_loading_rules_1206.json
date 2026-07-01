@@ -1,0 +1,46 @@
+{
+  "id": "npc_context_loading_rules_1206",
+  "version": "v1",
+  "purpose": "When to load full NPC presence rules and session NPC memory without overloading scene context.",
+  "light_digest_always": [
+    "East Sector is alive, but NPC density depends on location.",
+    "characters/ cast are never background NPCs.",
+    "NPC knowledge requires source.",
+    "Save meaningful invented NPCs to state/session_npcs.json."
+  ],
+  "load_full_npc_rules_when": [
+    "Akira is in a public location: canteen, training hall, gym, shooting range, active corridor, active yard, gates during movement.",
+    "Akira is in a quiet open location and the scene needs living background or an interruption.",
+    "A saved important session NPC may appear or is relevant.",
+    "An NPC has already entered and affects the scene.",
+    "A main/supporting character needs to be interrupted, called away, witnessed or socially framed.",
+    "The current scene goal includes social pressure, rumors, witnesses, public reaction or base life."
+  ],
+  "do_not_load_full_npc_rules_when": [
+    "Akira is alone in her room and no NPC trigger exists.",
+    "Akira is in a private medical check without a hook.",
+    "The scene is a closed conversation.",
+    "The scene already has too many active characters.",
+    "NPCs are not useful for the current scene goal."
+  ],
+  "session_npcs_loading": {
+    "full_state_when": [
+      "important_npc from state/session_npcs.json is active, nearby, mentioned, relevant to the location, or tied to current open thread",
+      "public scene may reuse saved important NPC",
+      "current day/window mentions a session NPC"
+    ],
+    "compact_state_when": [
+      "no named session NPC is active but the scene is public/open",
+      "only recent background notes are needed"
+    ],
+    "do_not_load_when": [
+      "private scene with no session NPC trigger",
+      "closed scene focused on main/supporting characters"
+    ]
+  },
+  "characters_folder_rule": [
+    "If an NPC identity matches a character in characters/, load that character as canon/supporting cast, not as background.",
+    "Do not replace a scheduled or logically required character with an invented NPC.",
+    "Do not rename an invented NPC into an existing character later if shown details conflict."
+  ]
+}
