@@ -1,0 +1,84 @@
+{
+  "id": "master_context_loading_rules_1206",
+  "version": "v1",
+  "purpose": "Единые правила загрузки контекста для Railway/API scene_contract builder. GPT получает уже собранный компактный scene_contract и не должен сам тянуть файлы проекта.",
+  "core_principles": [
+    "Сборщик на Railway/API собирает контекст; GPT только использует готовый scene_contract.",
+    "Контекст должен быть компактным: slices/digests вместо полных больших файлов.",
+    "Текущий POV и реальные участники сцены важнее статуса главного героя.",
+    "Акира не загружается автоматически, если POV не Акира и её нет в сцене/цели/упоминании.",
+    "Календарь, правила сцены и hidden lore не становятся знаниями NPC.",
+    "Отношения грузятся только по нужным парам, а не весь список отношений Акиры.",
+    "NPC context выбирается по локации, приватности и необходимости сцены.",
+    "Если есть сомнение, лучше загрузить короткий digest/hook, чем огромный файл."
+  ],
+  "source_priority": [
+    "session.current_frame / scene_state",
+    "last_player_input и текущий POV",
+    "calendar текущего дня или окна",
+    "active/present/speaking/observing/addressed персонажи",
+    "state/character_memory только нужных персонажей",
+    "state/relationship_pairs только нужных пар",
+    "state/session_npcs только релевантных named/session NPC",
+    "canon_lore только выбранные public slices",
+    "gpt/scene_output и gpt/runtime rules как краткие требования к форме ответа"
+  ],
+  "always_include_minimal": [
+    "runtime_version",
+    "session_id",
+    "current_frame",
+    "pov_character_id",
+    "location_id_or_name",
+    "location_privacy_level",
+    "scene_goal_or_current_pressure если есть",
+    "active_character_ids",
+    "present_character_ids",
+    "calendar_slice_current_only",
+    "scene_output_rules_digest",
+    "state_write_contract_digest"
+  ],
+  "never_include_by_default": [
+    "полный календарь месяца",
+    "будущие события календаря",
+    "все relationship_pairs Акиры",
+    "все character_memory",
+    "hidden lore / author-only truth",
+    "полные past.yaml персонажей без причины",
+    "все NPC rules в приватной сцене без триггера",
+    "старые deprecated relationships.json как основной источник",
+    "large/raw documents вместо компактных slices"
+  ],
+  "akira_loading_rule": {
+    "summary": "Акира важна, но не должна быть технически вечным центром любой сцены.",
+    "load_akira_when": [
+      "pov_character_id == 'akira'",
+      "Акира физически present/active/speaking/observing/addressed/looked_at",
+      "last_player_input управляет Акирой",
+      "scene_goal прямо связан с Акирой",
+      "другой активный персонаж прямо думает/говорит об Акире так, что это влияет на сцену",
+      "нужна relationship_pair с Акирой для текущей сцены"
+    ],
+    "do_not_load_akira_when": [
+      "POV другой персонаж",
+      "Акиры нет в сцене",
+      "Акира не упомянута и не является целью сцены",
+      "сцена про личные дела/работу/разговор других персонажей",
+      "пара с Акирой не нужна"
+    ]
+  },
+  "compactness_budget": {
+    "target": "scene_contract должен быть достаточно коротким для стабильной сцены, но не терять причинно-следственную память.",
+    "prefer": [
+      "1-5 строк на character_memory digest",
+      "1-5 строк на relationship_pair digest",
+      "только active protected_moments текущих персонажей/пар",
+      "текущий календарный день/окно, без будущего",
+      "короткие runtime rules вместо полных lock-файлов"
+    ],
+    "avoid": [
+      "сырые yaml целиком, если нужен один факт",
+      "повторение одинаковых запретов в нескольких блоках",
+      "списки всех персонажей и отношений без связи со сценой"
+    ]
+  }
+}

@@ -1,0 +1,171 @@
+{
+  "id": "scene_contract_assembly_rules_1206",
+  "version": "v1",
+  "purpose": "Пошаговое правило сборки scene_contract для 1206.",
+  "assembly_order": [
+    {
+      "step": 1,
+      "name": "resolve_current_frame",
+      "include": [
+        "date",
+        "time_of_day",
+        "location",
+        "location_privacy",
+        "pov_character_id",
+        "scene_phase",
+        "last_player_input_intent"
+      ],
+      "notes": "current_frame — якорь всего контекста. Если POV не указан явно, использовать session POV/default POV, но не подменять активную сцену Акирой автоматически."
+    },
+    {
+      "step": 2,
+      "name": "resolve_scene_participants",
+      "include": [
+        "pov",
+        "active",
+        "present",
+        "speaking",
+        "observing",
+        "addressed",
+        "nearby_if_relevant",
+        "audible_if_relevant"
+      ],
+      "notes": "scene_ids строятся из реального участия, а не из глобального списка персонажей."
+    },
+    {
+      "step": 3,
+      "name": "load_calendar_slice",
+      "include": [
+        "current day/window only",
+        "current pressure",
+        "available hooks",
+        "forbidden future spoilers"
+      ],
+      "notes": "Календарь — инструкция для сцены, не знание NPC."
+    },
+    {
+      "step": 4,
+      "name": "load_pov_character_context",
+      "include": [
+        "main/character digest",
+        "character_memory digest",
+        "current body/state",
+        "known/unknown boundaries"
+      ],
+      "notes": "POV загружается всегда. Но чужие мысли и скрытая правда не загружаются как POV-знание."
+    },
+    {
+      "step": 5,
+      "name": "load_active_character_context",
+      "include": [
+        "main/character digest",
+        "knowledge/static digest",
+        "character_memory digest",
+        "scene goals if available"
+      ],
+      "notes": "Только персонажи из active/present/speaking/observing/addressed. Characters/ не фоновые."
+    },
+    {
+      "step": 6,
+      "name": "select_relationship_pairs",
+      "include": [
+        "pairs where both participants active/present",
+        "direct thought/speech target",
+        "scene_goal pair",
+        "active open_thread pair"
+      ],
+      "notes": "Не грузить все пары Акиры. Relationship pair — один файл на пару."
+    },
+    {
+      "step": 7,
+      "name": "select_npc_context",
+      "include": [
+        "location-based NPC density",
+        "session_npcs relevant to location/scene",
+        "functional NPC if needed"
+      ],
+      "notes": "В приватных местах NPC rules full не грузить без причины."
+    },
+    {
+      "step": 8,
+      "name": "load_location_and_world_slices",
+      "include": [
+        "location slice",
+        "public world rules needed",
+        "energy/echo only if relevant"
+      ],
+      "notes": "Только публичное/известное и нужное сцене. Hidden lore author-only — не грузить как факт."
+    },
+    {
+      "step": 9,
+      "name": "load_recent_memory_and_open_threads",
+      "include": [
+        "last 1-3 important scene memories",
+        "open threads relevant to active participants",
+        "protected moments relevant now"
+      ],
+      "notes": "Сжимать форму, но не терять источник знания и эмоциональные зацепки."
+    },
+    {
+      "step": 10,
+      "name": "attach_output_and_write_contracts",
+      "include": [
+        "scene writing format digest",
+        "footer rules digest",
+        "quality gates",
+        "every-turn state write contract"
+      ],
+      "notes": "Это правила ответа, а не знания персонажей."
+    }
+  ],
+  "scene_ids_algorithm": {
+    "build_from": [
+      "pov_character_id",
+      "active_character_ids",
+      "present_character_ids",
+      "speaking_character_ids",
+      "observing_character_ids",
+      "addressed_character_ids",
+      "looked_at_character_ids",
+      "audible_character_ids if they can affect scene"
+    ],
+    "explicitly_forbid": [
+      "do not insert 'akira' automatically",
+      "do not insert all nearby characters unless they can speak/hear/affect scene",
+      "do not insert future calendar characters before their arrival"
+    ]
+  },
+  "contract_shape_required": {
+    "runtime": [
+      "version",
+      "session_id",
+      "builder_version"
+    ],
+    "current_frame": [
+      "date",
+      "time",
+      "location",
+      "privacy",
+      "pov",
+      "scene_phase"
+    ],
+    "participants": [
+      "pov",
+      "active",
+      "present",
+      "speaking",
+      "observing",
+      "nearby",
+      "audible"
+    ],
+    "calendar_slice": "current_only",
+    "characters": "dict by loaded character_id with compact digest",
+    "character_memory": "dict by loaded character_id with compact digest and knowledge boundaries",
+    "relationship_pairs": "dict by pair_id with compact relationship digest",
+    "npc_context": "none/light/full/relevant_session_npcs",
+    "location_context": "compact",
+    "recent_memory": "compact relevant only",
+    "output_contract": "format/footer/quality digest",
+    "state_write_contract": "what must be saved after scene"
+  }
+}

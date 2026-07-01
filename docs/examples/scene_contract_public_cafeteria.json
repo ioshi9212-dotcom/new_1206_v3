@@ -1,0 +1,79 @@
+{
+  "runtime": {
+    "session_id": "example",
+    "builder_version": "scene_context_assembly_v1"
+  },
+  "current_frame": {
+    "date": "1206-09-06",
+    "time_of_day": "день",
+    "location": "Восточный сектор · столовая",
+    "location_privacy": "public",
+    "pov_character_id": "akira",
+    "scene_phase": "первое встраивание в жизнь базы"
+  },
+  "participants": {
+    "pov": "akira",
+    "active": [
+      "akira",
+      "miki",
+      "raiden"
+    ],
+    "present": [
+      "akira",
+      "miki",
+      "raiden"
+    ],
+    "speaking": [
+      "miki",
+      "raiden"
+    ],
+    "observing": [],
+    "nearby": [
+      "background_raiders"
+    ],
+    "audible": [
+      "background_raiders"
+    ]
+  },
+  "calendar_slice": {
+    "scope": "current_only",
+    "facts": [
+      "база живёт обычной жизнью",
+      "социальные связи постепенно формируются"
+    ],
+    "forbidden": [
+      "не раскрывать будущий приход Хару как факт сцены"
+    ]
+  },
+  "characters": {
+    "akira": {
+      "loaded_because": "POV"
+    },
+    "miki": {
+      "loaded_because": "active speaker"
+    },
+    "raiden": {
+      "loaded_because": "present/active"
+    }
+  },
+  "relationship_pairs": {
+    "akira__miki": {
+      "loaded_because": "active interaction"
+    },
+    "akira__raiden": {
+      "loaded_because": "present and dynamic tension"
+    }
+  },
+  "npc_context": {
+    "mode": "medium/full",
+    "reason": "public cafeteria; background NPCs and interruptions allowed"
+  },
+  "location_context": {
+    "privacy": "public",
+    "npc_density": "medium",
+    "audibility": "важные громкие реплики могут услышать соседние столы"
+  },
+  "output_contract": {
+    "footer_relationships": "show only Miki/Raiden if changed or touched, max 3"
+  }
+}

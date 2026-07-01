@@ -1,0 +1,126 @@
+{
+  "id": "location_privacy_context_rules_1206",
+  "version": "v1",
+  "purpose": "Локация определяет приватность, слышимость, плотность NPC и глубину контекста.",
+  "privacy_levels": {
+    "private": {
+      "examples": [
+        "комната Акиры",
+        "ванная",
+        "закрытый кабинет",
+        "приватный медосмотр"
+      ],
+      "npc_context": "none/light only if triggered",
+      "allowed_npc": [
+        "invited",
+        "knocks with reason",
+        "functional medic/assistant",
+        "emergency"
+      ],
+      "forbidden": [
+        "фоновые NPC входят просто так",
+        "толпа",
+        "случайные слухи за дверью без причины"
+      ],
+      "context_loading": [
+        "POV",
+        "active present characters",
+        "private location slice",
+        "no full NPC rules unless trigger"
+      ]
+    },
+    "quiet_open": {
+      "examples": [
+        "крыша",
+        "двор ночью",
+        "фонтан",
+        "дерево за зданием",
+        "пустой коридор",
+        "парковка"
+      ],
+      "npc_context": "light/medium if scene needs life",
+      "allowed_npc": [
+        "one passerby",
+        "important character by route",
+        "short background voices",
+        "functional interruption"
+      ],
+      "forbidden": [
+        "постоянная толпа",
+        "случайные важные открытия без подготовки"
+      ],
+      "context_loading": [
+        "POV",
+        "present/active",
+        "location slice",
+        "NPC light rules",
+        "relationship pairs only if active"
+      ]
+    },
+    "public": {
+      "examples": [
+        "столовая",
+        "трензал",
+        "спортзал",
+        "стрельбище",
+        "активный коридор",
+        "двор в дневное время"
+      ],
+      "npc_context": "medium/full",
+      "allowed_npc": [
+        "фон",
+        "разговоры",
+        "functional NPC",
+        "session NPC",
+        "characters/ if their route fits"
+      ],
+      "forbidden": [
+        "делать всех фоновых NPC важными",
+        "давать hidden knowledge случайным NPC"
+      ],
+      "context_loading": [
+        "POV",
+        "active/present speakers",
+        "NPC presence rules",
+        "session_npcs relevant",
+        "relationship pairs only active"
+      ]
+    },
+    "functional": {
+      "examples": [
+        "медблок",
+        "гараж",
+        "архив",
+        "ворота",
+        "зона техники",
+        "кабинет специалиста"
+      ],
+      "npc_context": "function_based",
+      "allowed_npc": [
+        "медик",
+        "механик",
+        "дежурный",
+        "инструктор",
+        "помощник"
+      ],
+      "forbidden": [
+        "NPC без функции захватывает сцену",
+        "функциональный NPC знает больше, чем должен"
+      ],
+      "context_loading": [
+        "functional role rules",
+        "session NPC only if already named/relevant",
+        "location slice"
+      ]
+    }
+  },
+  "audibility_rules": [
+    "Если место публичное/открытое, часть реплик могут услышать nearby NPC, но не весь hidden context.",
+    "Если дверь закрыта/разговор тихий/локация приватная, nearby не слышит без явной причины.",
+    "Кто услышал важное, должен быть записан в state/applyTurnResult."
+  ],
+  "footer_impact": [
+    "В приватной сцене footer не должен предлагать публичные NPC-варианты без причины.",
+    "В публичной сцене footer может предложить уйти, ответить, наблюдать или выбрать собеседника, но max 3 варианта."
+  ]
+}

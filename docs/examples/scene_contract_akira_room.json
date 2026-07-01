@@ -1,0 +1,71 @@
+{
+  "runtime": {
+    "session_id": "example",
+    "builder_version": "scene_context_assembly_v1"
+  },
+  "current_frame": {
+    "date": "1206-09-01",
+    "time_of_day": "утро",
+    "location": "Восточный сектор · комната Акиры",
+    "location_privacy": "private",
+    "pov_character_id": "akira",
+    "scene_phase": "после прибытия"
+  },
+  "participants": {
+    "pov": "akira",
+    "active": [
+      "akira"
+    ],
+    "present": [
+      "akira"
+    ],
+    "speaking": [],
+    "observing": [],
+    "nearby": [],
+    "audible": []
+  },
+  "calendar_slice": {
+    "scope": "current_only",
+    "facts": [
+      "первое утро в Восточном секторе",
+      "Мики может появиться как первый контакт, если есть причина"
+    ],
+    "forbidden": [
+      "не грузить будущие дни",
+      "не упоминать Юну до 2 сентября"
+    ]
+  },
+  "characters": {
+    "akira": {
+      "loaded_because": "POV",
+      "digest": "Акира в комнате, держится собранно, память и энергия заблокированы."
+    }
+  },
+  "character_memory": {
+    "akira": {
+      "does_not_know": [
+        "полную правду прошлого",
+        "причины закрытости Рэя"
+      ],
+      "current_hooks": [
+        "вещи Джуна",
+        "запертый разговор с Рэем"
+      ]
+    }
+  },
+  "relationship_pairs": {},
+  "npc_context": {
+    "mode": "none/light",
+    "reason": "private location; NPC only with knock/reason"
+  },
+  "location_context": {
+    "privacy": "private",
+    "npc_density": "rare",
+    "audibility": "закрытая дверь снижает слышимость"
+  },
+  "output_contract": {
+    "body": "third_person_limited_pov",
+    "footer": "first_person_pov, max 3 options each",
+    "relationships_footer": "hide unless changed/touched"
+  }
+}
