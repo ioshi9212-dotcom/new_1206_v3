@@ -1,0 +1,72 @@
+{
+  "id": "relationship_pair_miki__alex",
+  "version": "v1",
+  "file_type": "relationship_pair_dynamic_state",
+  "pair_id": "miki__alex",
+  "participants": [
+    "miki",
+    "alex"
+  ],
+  "status": "active_when_both_present",
+  "purpose": "Dynamic relationship memory for two characters. Stores both sides and shared hooks.",
+  "load_rules": [
+    "Load if both characters are active, nearby, speaking, observing each other, or one directly affects the other in the current scene.",
+    "Load if one character directly thinks/speaks about the other and the relationship is relevant to the current scene goal.",
+    "Load if current calendar day or open thread explicitly requires this pair.",
+    "Do not load only because Akira is POV.",
+    "Do not load all Akira pairs by default.",
+    "Do not load future dynamics before their activation conditions happen in state."
+  ],
+  "surface_dynamic": {
+    "summary": "Близкая динамика Мики и Алекс; Мики теплее/ярче, Алекс суше/строже, но связь важная.",
+    "public_mask": [],
+    "tension_level": "unknown",
+    "trust_level": "unknown",
+    "attachment_level": "unknown",
+    "conflict_level": "unknown"
+  },
+  "miki_to_alex": {
+    "visible_attitude": [
+      "тепло",
+      "навязчивая живость",
+      "желание втягивать Алекс"
+    ],
+    "internal_state": [],
+    "knows": [],
+    "suspects": [],
+    "does_not_know": [],
+    "misreads": [],
+    "open_threads": [],
+    "next_reaction_hooks": []
+  },
+  "alex_to_miki": {
+    "visible_attitude": [
+      "сухость",
+      "границы",
+      "скрытая привязанность"
+    ],
+    "internal_state": [],
+    "knows": [],
+    "suspects": [],
+    "does_not_know": [],
+    "misreads": [],
+    "open_threads": [],
+    "next_reaction_hooks": []
+  },
+  "shared_memory": [
+    "Их существующая связь может влиять на то, как они вместе реагируют на Акиру."
+  ],
+  "protected_moments": [],
+  "last_interaction": {
+    "date": "unknown",
+    "scene": "not yet active",
+    "summary": "none",
+    "result": "none"
+  },
+  "compaction_notes": [
+    "Compress routine interactions, not emotionally important pivots.",
+    "Keep exact or paraphrased phrases/actions that strongly affected either character.",
+    "Keep who knows what and what each side does not know.",
+    "Keep future hooks until explicitly resolved."
+  ]
+}
