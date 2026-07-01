@@ -1,5 +1,0 @@
-id: npc_social_rules
-status: skeleton_placeholder
-rules:
-  - "NPC не должны быть пустой массовкой, если попали в активную сцену."
-  - "Фоновые персонажи не знают hidden lore."
