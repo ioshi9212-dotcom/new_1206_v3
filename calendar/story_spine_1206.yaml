@@ -1,0 +1,94 @@
+id: "story_spine_1206"
+file_type: "calendar_story_spine"
+version: "clean_story_rules_v1"
+status: "active"
+
+core_rule:
+  - "Story spine is not a scene script."
+  - "It names pressure nodes, possible consequences and character links."
+  - "It must not prescribe Akira's actions, speech, inner conclusions or route."
+  - "Player input and current state decide the path."
+
+arc_summary:
+  start_pressure:
+    date: "1206-08-31"
+    function:
+      - "внешнее вмешательство в доме Джуна"
+      - "Акира получает видимые и слышимые сигналы угрозы"
+      - "игрок выбирает реакцию"
+      - "NPC действуют по своим целям, если игрок медлит"
+    possible_outcomes:
+      - "Джун жив и скрывается/вывозится/остаётся под угрозой"
+      - "Джун ранен и его исход зависит от помощи, времени и дальнейших действий"
+      - "Джун погибает, если логика ветки к этому привела"
+      - "Акира попадает к Восточному сектору напрямую или через промежуточную ветку"
+      - "контакт с Ирээм, Эммой и Райденом зависит от выбора и тайминга"
+
+  east_sector_entry:
+    date_window: "1206-08-31_to_1206-09-01"
+    function:
+      - "Восточный сектор появляется как живая база, а не тюрьма"
+      - "Рэй занят командованием и скрывает часть правды"
+      - "Акира может искать ответы, конфликтовать, наблюдать, закрываться или втягиваться в жизнь базы"
+      - "NPC не обязаны быть удобными, но не должны говорить лабораторным языком без причины"
+
+  free_adaptation_window:
+    date_window: "1206-09-01_to_1206-09-14"
+    function:
+      - "дать игроку пространство играть быт, восстановление, попытки поговорить, наблюдение за базой"
+      - "разрешить короткие мини-арки NPC без поломки главного сюжета"
+      - "постепенно подводить к лекциям, тренировочным зонам, Мики, Широ, Алекс, Райдену и конфликтным фигурам"
+
+  access_and_training_pressure:
+    date_window: "1206-09-15_and_after"
+    function:
+      - "узел допуска к лекциям/тренировочным зонам"
+      - "Рэй может ставить условия через безопасность и ответственность"
+      - "Акира может добиваться доступа разными способами"
+      - "Кай, Мики, Широ, Алекс, Райден и другие могут смещаться ближе к активной сцене"
+
+character_refs:
+  akira:
+    main: "characters/akira/main.yaml"
+    character: "characters/akira/character.yaml"
+    knowledge: "characters/akira/knowledge.yaml"
+  jun:
+    main: "characters/jun/main.yaml"
+    character: "characters/jun/character.yaml"
+    knowledge: "characters/jun/knowledge.yaml"
+  irey:
+    main: "characters/irey/main.yaml"
+    character: "characters/irey/character.yaml"
+    knowledge: "characters/irey/knowledge.yaml"
+  emma:
+    main: "characters/emma/main.yaml"
+    character: "characters/emma/character.yaml"
+    knowledge: "characters/emma/knowledge.yaml"
+  raiden:
+    main: "characters/raiden/main.yaml"
+    character: "characters/raiden/character.yaml"
+    knowledge: "characters/raiden/knowledge.yaml"
+  ray:
+    main: "characters/ray/main.yaml"
+    character: "characters/ray/character.yaml"
+    knowledge: "characters/ray/knowledge.yaml"
+  miki:
+    main: "characters/miki/main.yaml"
+    character: "characters/miki/character.yaml"
+    knowledge: "characters/miki/knowledge.yaml"
+  shiro:
+    main: "characters/shiro/main.yaml"
+    character: "characters/shiro/character.yaml"
+    knowledge: "characters/shiro/knowledge.yaml"
+  alex:
+    main: "characters/alex/main.yaml"
+    character: "characters/alex/character.yaml"
+    knowledge: "characters/alex/knowledge.yaml"
+  kai:
+    main: "characters/kai/main.yaml"
+    character: "characters/kai/character.yaml"
+    knowledge: "characters/kai/knowledge.yaml"
+  yuna:
+    main: "characters/yuna/main.yaml"
+    character: "characters/yuna/character.yaml"
+    knowledge: "characters/yuna/knowledge.yaml"

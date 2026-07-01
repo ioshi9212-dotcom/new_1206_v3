@@ -1,0 +1,12 @@
+lore_index_id: akira_1206v2_lore_index
+mode: canon_lore_v1
+
+always:
+  - canon_lore/core/world_background.yaml
+  - canon_lore/core/story_background.yaml
+  - canon_lore/hidden/hidden_lore_policy.yaml
+
+optional:
+  energy: canon_lore/world/energy_system.yaml
+  social: canon_lore/social/npc_social_rules.yaml
+  east_sector: canon_lore/east_sector/east_sector_base.yaml
