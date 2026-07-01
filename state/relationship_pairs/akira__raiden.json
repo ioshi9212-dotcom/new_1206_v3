@@ -1,0 +1,98 @@
+{
+  "id": "relationship_pair_akira__raiden",
+  "version": "v1",
+  "file_type": "relationship_pair_dynamic_state",
+  "pair_id": "akira__raiden",
+  "participants": [
+    "akira",
+    "raiden"
+  ],
+  "status": "active_after_first_shared_scene",
+  "purpose": "Dynamic relationship memory for two characters. Stores both sides and shared hooks.",
+  "load_rules": [
+    "Load if both characters are active, nearby, speaking, observing each other, or one directly affects the other in the current scene.",
+    "Load if one character directly thinks/speaks about the other and the relationship is relevant to the current scene goal.",
+    "Load if current calendar day or open thread explicitly requires this pair.",
+    "Do not load only because Akira is POV.",
+    "Do not load all Akira pairs by default.",
+    "Do not load future dynamics before their activation conditions happen in state."
+  ],
+  "surface_dynamic": {
+    "summary": "Старт 1206: внешне чужие/резкие, с будущей скрытой тягой без осознанной памяти Райдена.",
+    "public_mask": [],
+    "tension_level": "unknown",
+    "trust_level": "unknown",
+    "attachment_level": "unknown",
+    "conflict_level": "unknown"
+  },
+  "akira_to_raiden": {
+    "visible_attitude": [
+      "настороженность",
+      "может отвечать колкостью или сопротивлением, если он давит"
+    ],
+    "internal_state": [
+      "может ощущать странный отклик только если сцена это дала; не считать это знанием прошлого"
+    ],
+    "knows": [
+      "будет знать только то, что Райден сделал/сказал при ней в текущей ветке"
+    ],
+    "suspects": [],
+    "does_not_know": [
+      "не знает прошлую связь с Райденом",
+      "не знает причины его кольца/пирсинга/сигарет",
+      "не знает его личный день 31 августа, если он не сказал/не был источник"
+    ],
+    "misreads": [],
+    "open_threads": [
+      "косуха Райдена может остаться у Акиры как предмет-крючок, если он дал её в сцене"
+    ],
+    "next_reaction_hooks": [
+      "может цепляться за его грубость",
+      "может попытаться вернуть косуху как нейтральный повод поговорить"
+    ]
+  },
+  "raiden_to_akira": {
+    "visible_attitude": [
+      "сухость",
+      "раздражение",
+      "дистанция",
+      "практическая защита без признания заботы"
+    ],
+    "internal_state": [
+      "необъяснимый внутренний отклик допустим только как ощущение/раздражение, не как знание прошлого"
+    ],
+    "knows": [
+      "знает только то, что видел/слышал в активной ветке"
+    ],
+    "suspects": [],
+    "does_not_know": [
+      "не знает, что она Акира из его прошлого",
+      "не знает о записке без источника",
+      "не знает её выборы/предметы, если не видел"
+    ],
+    "misreads": [],
+    "open_threads": [
+      "если косуха у Акиры, он не обязан забирать её сразу"
+    ],
+    "next_reaction_hooks": [
+      "может делать вид, что ему всё равно",
+      "может использовать практическую резкость вместо прямой заботы"
+    ]
+  },
+  "shared_memory": [
+    "Будущие совместные сцены должны записывать, кто что видел и что стало общим знанием."
+  ],
+  "protected_moments": [],
+  "last_interaction": {
+    "date": "unknown",
+    "scene": "not yet active",
+    "summary": "none",
+    "result": "none"
+  },
+  "compaction_notes": [
+    "Compress routine interactions, not emotionally important pivots.",
+    "Keep exact or paraphrased phrases/actions that strongly affected either character.",
+    "Keep who knows what and what each side does not know.",
+    "Keep future hooks until explicitly resolved."
+  ]
+}

@@ -1,0 +1,59 @@
+{
+  "id": "character_memory_jun",
+  "version": "v1",
+  "file_type": "character_dynamic_memory",
+  "character_id": "jun",
+  "purpose": "Dynamic personal memory. Update through state writer; do not treat calendar/rules as character knowledge.",
+  "load_rule": [
+    "Load when this character is active, nearby, speaking, observing, directly referenced in scene goal, or must process a new fact.",
+    "Do not load this memory only because Akira is POV.",
+    "If absent, this character does not learn the scene automatically."
+  ],
+  "current_status": {
+    "date": "1206-08-31/start_or_pre_start",
+    "location": "unknown",
+    "availability": "active_at_1206-08-31_start_if_branch_allows",
+    "physical_state": [],
+    "emotional_state_visible": [],
+    "internal_pressure": [],
+    "current_goal": [
+      "Защитить Акиру и направить её к Восточному сектору, не раскрывая всё монологом."
+    ],
+    "current_limitations": [],
+    "current_orders_or_duties": []
+  },
+  "memory": {
+    "saw": [],
+    "heard": [],
+    "knows_as_fact": [
+      "Воспитывал Акиру и знает важные части её прошлого.",
+      "Знает, что Рэй/Восточный сектор может быть точкой защиты."
+    ],
+    "suspects": [],
+    "wrongly_believes": [],
+    "does_not_know": [
+      "Не знает всё о текущих планах Самуэля/Эммы/Ирэя, если не было источника.",
+      "Не знает все последствия будущих событий."
+    ],
+    "is_hiding": [
+      "Скрывал от Акиры часть правды ради защиты."
+    ],
+    "agreements": [],
+    "orders_or_duties": [],
+    "future_hooks": [
+      "Его слова/письмо/действия могут стать источником маршрута, но не обязаны существовать в каждой ветке."
+    ],
+    "recent_scene_notes": []
+  },
+  "knowledge_source_rules": [
+    "Facts here must come from direct experience, documents, orders, conversations, state updates or static character knowledge.",
+    "Calendar rules, loading rules and prompt instructions are not character knowledge.",
+    "If a fact is not sourced for this character, store it as suspicion or do not store it."
+  ],
+  "protected_moments": [],
+  "compaction_notes": [
+    "Keep emotionally/logically important moments for this character.",
+    "Compress routine, not memory.",
+    "Keep source of knowledge when possible."
+  ]
+}

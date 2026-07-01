@@ -9,11 +9,12 @@
   ],
   "purpose": "Dynamic relationship memory for two characters. Stores both sides in one file.",
   "load_rules": [
-    "Load if both characters are active/nearby/speaking/observing each other in the current scene.",
-    "Load if one character directly thinks/speaks about the other and the relationship is relevant to current scene goal.",
-    "Load if current calendar day or open thread explicitly requires this pair.",
+    "Load if both characters are active, nearby, speaking, observing each other, or one directly affects the other in the current scene.",
+    "Load if one character directly thinks or speaks about the other and the relationship is relevant to the current scene goal.",
+    "Load if current calendar day, current scene goal or open thread explicitly requires this pair.",
     "Do not load only because Akira is POV.",
-    "Do not load all Akira relationship pairs by default."
+    "Do not load all Akira relationship pairs by default.",
+    "Do not load future relationship dynamics before they become active in state."
   ],
   "surface_dynamic": {
     "summary": "short current external dynamic",
@@ -56,15 +57,14 @@
     }
   ],
   "last_interaction": {
-    "date": "YYYY-MM-DD",
-    "scene": "short scene name",
-    "summary": "short factual summary",
-    "result": "what changed, if anything"
+    "date": "unknown",
+    "scene": "unknown",
+    "summary": "not yet active",
+    "result": "none"
   },
-  "compaction_rules": [
-    "Do not delete protected_moments.",
-    "Do not flatten a complex relationship into a single generic label.",
-    "Keep separate what each side knows, suspects, hides and misunderstands.",
-    "If a moment changed future behavior, keep it as a hook."
+  "compaction_notes": [
+    "Do not flatten relationship into generic labels like friends/enemies/tense if specific hooks exist.",
+    "Compress repeated routine interactions, but keep emotional pivots, promises, refusals, accusations and protected moments.",
+    "Keep who knows what and who does not know what."
   ]
 }

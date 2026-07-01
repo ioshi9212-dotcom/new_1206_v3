@@ -1,0 +1,82 @@
+{
+  "id": "relationship_pair_raiden__haru",
+  "version": "v1",
+  "file_type": "relationship_pair_dynamic_state",
+  "pair_id": "raiden__haru",
+  "participants": [
+    "raiden",
+    "haru"
+  ],
+  "status": "active_from_1206-09-21_or_when_both_present",
+  "purpose": "Dynamic relationship memory for two characters. Stores both sides and shared hooks.",
+  "load_rules": [
+    "Load if both characters are active, nearby, speaking, observing each other, or one directly affects the other in the current scene.",
+    "Load if one character directly thinks/speaks about the other and the relationship is relevant to the current scene goal.",
+    "Load if current calendar day or open thread explicitly requires this pair.",
+    "Do not load only because Akira is POV.",
+    "Do not load all Akira pairs by default.",
+    "Do not load future dynamics before their activation conditions happen in state."
+  ],
+  "surface_dynamic": {
+    "summary": "Близкие друзья с общей историей; после появления Акиры напряжение может расти из-за того, что Хару помнит больше, а Райден нет.",
+    "public_mask": [],
+    "tension_level": "unknown",
+    "trust_level": "unknown",
+    "attachment_level": "unknown",
+    "conflict_level": "unknown"
+  },
+  "raiden_to_haru": {
+    "visible_attitude": [
+      "сухие подколы",
+      "ленивая грубость",
+      "знакомая дистанция"
+    ],
+    "internal_state": [
+      "может раздражаться, если Хару ведёт себя странно с Акирой"
+    ],
+    "knows": [
+      "знает Хару как близкого друга"
+    ],
+    "suspects": [],
+    "does_not_know": [
+      "не понимает полную причину реакции Хару на Акиру"
+    ],
+    "misreads": [],
+    "open_threads": [],
+    "next_reaction_hooks": []
+  },
+  "haru_to_raiden": {
+    "visible_attitude": [
+      "шутки",
+      "живость",
+      "прямая близость"
+    ],
+    "internal_state": [
+      "может болезненно видеть пустоту/потерю памяти Райдена"
+    ],
+    "knows": [
+      "знает больше прошлого, чем Райден помнит, в пределах своей карточки/state"
+    ],
+    "suspects": [],
+    "does_not_know": [],
+    "misreads": [],
+    "open_threads": [
+      "может пытаться прикрывать правду или давить слишком прямо"
+    ],
+    "next_reaction_hooks": []
+  },
+  "shared_memory": [],
+  "protected_moments": [],
+  "last_interaction": {
+    "date": "unknown",
+    "scene": "not yet active",
+    "summary": "none",
+    "result": "none"
+  },
+  "compaction_notes": [
+    "Compress routine interactions, not emotionally important pivots.",
+    "Keep exact or paraphrased phrases/actions that strongly affected either character.",
+    "Keep who knows what and what each side does not know.",
+    "Keep future hooks until explicitly resolved."
+  ]
+}
