@@ -1,24 +1,19 @@
 {
   "id": "character_memory_index_1206",
-  "version": "v1",
-  "file_type": "character_memory_index",
-  "purpose": "Registry of starter dynamic character memory files. Loader should choose only relevant files.",
+  "version": "v2_migrated",
+  "rule": "Load only active/focused character memory. Do not load all files by default.",
   "files": {
     "akira": "state/character_memory/akira.json",
+    "alex": "state/character_memory/alex.json",
+    "emma": "state/character_memory/emma.json",
+    "haru": "state/character_memory/haru.json",
+    "irey": "state/character_memory/irey.json",
+    "jun": "state/character_memory/jun.json",
+    "kai": "state/character_memory/kai.json",
+    "miki": "state/character_memory/miki.json",
     "raiden": "state/character_memory/raiden.json",
     "ray": "state/character_memory/ray.json",
-    "miki": "state/character_memory/miki.json",
-    "yuna": "state/character_memory/yuna.json",
-    "haru": "state/character_memory/haru.json",
     "shiro": "state/character_memory/shiro.json",
-    "alex": "state/character_memory/alex.json",
-    "jun": "state/character_memory/jun.json",
-    "irey": "state/character_memory/irey.json",
-    "emma": "state/character_memory/emma.json"
-  },
-  "legacy_mapping": {
-    "old_path": "state/character_knowledge/<id>.json",
-    "new_path": "state/character_memory/<id>.json",
-    "note": "Existing code may still use character_knowledge. Migrate gradually or map old path to new dynamic memory schema."
+    "yuna": "state/character_memory/yuna.json"
   }
 }

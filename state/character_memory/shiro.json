@@ -1,6 +1,6 @@
 {
   "id": "character_memory_shiro",
-  "version": "v1",
+  "version": "v2_migrated_from_1206_v2_main_6",
   "file_type": "character_dynamic_memory",
   "character_id": "shiro",
   "purpose": "Dynamic personal memory. Update through state writer; do not treat calendar/rules as character knowledge.",
@@ -52,5 +52,7 @@
     "Keep emotionally/logically important moments for this character.",
     "Compress routine, not memory.",
     "Keep source of knowledge when possible."
-  ]
+  ],
+  "migration_status": "migrated_with_static_and_dynamic_knowledge_from_old_repo",
+  "migration_warnings": []
 }

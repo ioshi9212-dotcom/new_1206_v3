@@ -1,0 +1,27 @@
+{
+  "id": "state_relationship_memory_migration_report_1206",
+  "version": "v2",
+  "source_zip": "1206_v2-main (6).zip",
+  "base_zip": "state_relationship_memory_layer_1206_ru.zip",
+  "output_zip": "state_relationship_memory_layer_1206_ru_v2_migrated.zip",
+  "migrated_sources": [
+    "state/character_knowledge/*.json",
+    "characters/*/knowledge.yaml",
+    "state/initial_relationships_1206.json",
+    "state/relationship_score_panel.json",
+    "state/raiden_akira_dynamic_rules.json",
+    "canon/relationships/akira_raiden_hidden_bond.yaml",
+    "canon/relationships/akira_raiden_memory_fragments.yaml",
+    "state/relationship_memory_rules_1206.json"
+  ],
+  "important_sanitized_conflicts": [
+    "Old Ray->Akira hidden relationship wording with romantic subtext was not carried as canon; replaced with family/protective attachment, control and duty.",
+    "Old Raiden/Yumi wording tying conscious engagement chronology to Akira was not inserted as Raiden dynamic knowledge; Raiden knows Yumi engagement as a contract but does not connect it to Akira.",
+    "Calendar facts, route facts and note/letter facts remain non-NPC knowledge unless scene/source gives them."
+  ],
+  "notes": [
+    "This package intentionally keeps a migrated_static_knowledge_snapshot inside each character_memory file, so scattered old knowledge is not lost.",
+    "Later you can clean permanent facts back into characters/<id>/knowledge.yaml and keep only dynamic/start-state facts in character_memory.",
+    "The migrated snapshots are guards, not permission to reveal secrets in POV or dialogue. Disclosure rules still apply."
+  ]
+}

@@ -1,0 +1,434 @@
+{
+  "id": "character_memory_kai",
+  "version": "v2_migrated_from_1206_v2_main_6",
+  "file_type": "character_dynamic_memory",
+  "character_id": "kai",
+  "purpose": "Dynamic personal memory plus migrated start knowledge guards. Update through state writer; calendar/rules are not character knowledge.",
+  "load_rule": [
+    "Load when this character is active, nearby, speaking, observing, directly referenced in scene goal, or must process a new fact.",
+    "Do not load only because Akira is POV.",
+    "If absent, this character does not learn the scene automatically."
+  ],
+  "current_status": {
+    "date": "1206-08-31/start_or_pre_start",
+    "location": "unknown",
+    "availability": "unknown",
+    "physical_state": [],
+    "emotional_state_visible": [],
+    "internal_pressure": [],
+    "current_goal": [],
+    "current_limitations": [],
+    "current_orders_or_duties": []
+  },
+  "memory": {
+    "saw": [],
+    "heard": [],
+    "knows_as_fact": [
+      "он командир 5-го отряда Восточного сектора",
+      "его считают грубым, опасным и неудобным",
+      "его метод — давление, провокация и проверка реакции",
+      "он не считает себя злодеем и не оправдывается",
+      "он знает свою энергию как электрический разряд",
+      "он знает, что его энергия контактная и опасная",
+      "он знает, что мать погибла, пытаясь его защитить",
+      "он знает, что слабость и беспомощность для него связаны со смертью",
+      "Кай знает Восточный сектор как рабочую базу рейдеров",
+      "Кай знает Рэя как старшего командира, перед которым нужно держать рамки",
+      "Кай знает Широ как стабилизатора, который может остановить его",
+      "Кай знает Мики как рейдера 7-го отряда, которая может защищать Акиру",
+      "Кай знает Райдена как сильного командира и бойца",
+      "Рэй выше по структуре; прямой приказ Рэя нельзя свободно игнорировать без последствий",
+      "Широ удерживает и ставит границу, когда Кай переходит черту",
+      "Кай понимает, что Широ не играет в его провокации, а просто останавливает",
+      "Райден для Кая — другой тип силы и контроля",
+      "Кай уважает Райдена как бойца, но не близок с ним",
+      "Мики может резко защищать Акиру от давления",
+      "Кай может воспринимать заботливость Мики как раздражающую мягкость",
+      "Алекс рейдер 7-го отряда; её давление не похоже на электрический разряд Кая",
+      "Хару слишком живой, шумный и эмоциональный для Кая",
+      "Самуэль известен как важная фигура системы и брат Райдена",
+      "Кай не связан с Самуэлем как союзник или исполнитель",
+      "мать Кая пыталась защитить его, получила травму и умерла",
+      "эта смерть стала главным корнем его ненависти к слабости, жалости и беспомощности"
+    ],
+    "suspects": [],
+    "wrongly_believes": [],
+    "does_not_know": [
+      "на старте не знает Акиру лично",
+      "не знает имя Акиры до знакомства",
+      "не знает прошлое Акиры",
+      "не знает способности Акиры",
+      "не знает связь Акиры с Самуэлем",
+      "не знает про лабораторию",
+      "не знает про эксперименты",
+      "не знает про беременность Акиры",
+      "не знает про потерю ребёнка",
+      "не знает про амнезию Акиры",
+      "не знает про Джуна и его роль в жизни Акиры",
+      "не знает прошлую связь Райдена и Акиры",
+      "не знает механизм потери памяти Райдена",
+      "не знает истинную природу цикла",
+      "не знает про Ирэя",
+      "не знает про Эмму",
+      "не знает их цели и связи",
+      "не знает скрытую роль Самуэля в лаборатории относительно Акиры",
+      "не знает истинную природу Наблюдателя",
+      "не знает hidden lore за пределами своего опыта и доступов"
+    ],
+    "is_hiding": [],
+    "agreements": [],
+    "orders_or_duties": [],
+    "future_hooks": [],
+    "recent_scene_notes": []
+  },
+  "migrated_static_knowledge_snapshot": {
+    "purpose": "Safety copy from old characters/<id>/knowledge.yaml. Use as start knowledge guard; later clean permanent/temporary data can be split more strictly.",
+    "source_file": "characters/kai/knowledge.yaml",
+    "knows_or_controlled_facts": [
+      {
+        "category": "knows.self",
+        "text": "он командир 5-го отряда Восточного сектора"
+      },
+      {
+        "category": "knows.self",
+        "text": "его считают грубым, опасным и неудобным"
+      },
+      {
+        "category": "knows.self",
+        "text": "его метод — давление, провокация и проверка реакции"
+      },
+      {
+        "category": "knows.self",
+        "text": "он не считает себя злодеем и не оправдывается"
+      },
+      {
+        "category": "knows.self",
+        "text": "он знает свою энергию как электрический разряд"
+      },
+      {
+        "category": "knows.self",
+        "text": "он знает, что его энергия контактная и опасная"
+      },
+      {
+        "category": "knows.self",
+        "text": "он знает, что мать погибла, пытаясь его защитить"
+      },
+      {
+        "category": "knows.self",
+        "text": "он знает, что слабость и беспомощность для него связаны со смертью"
+      },
+      {
+        "category": "knows.east_sector",
+        "text": "Кай знает Восточный сектор как рабочую базу рейдеров"
+      },
+      {
+        "category": "knows.east_sector",
+        "text": "Кай знает Рэя как старшего командира, перед которым нужно держать рамки"
+      },
+      {
+        "category": "knows.east_sector",
+        "text": "Кай знает Широ как стабилизатора, который может остановить его"
+      },
+      {
+        "category": "knows.east_sector",
+        "text": "Кай знает Мики как рейдера 7-го отряда, которая может защищать Акиру"
+      },
+      {
+        "category": "knows.east_sector",
+        "text": "Кай знает Райдена как сильного командира и бойца"
+      },
+      {
+        "category": "knows.relationships.ray",
+        "text": "Рэй выше по структуре; прямой приказ Рэя нельзя свободно игнорировать без последствий"
+      },
+      {
+        "category": "knows.relationships.shiro",
+        "text": "Широ удерживает и ставит границу, когда Кай переходит черту"
+      },
+      {
+        "category": "knows.relationships.shiro",
+        "text": "Кай понимает, что Широ не играет в его провокации, а просто останавливает"
+      },
+      {
+        "category": "knows.relationships.raiden",
+        "text": "Райден для Кая — другой тип силы и контроля"
+      },
+      {
+        "category": "knows.relationships.raiden",
+        "text": "Кай уважает Райдена как бойца, но не близок с ним"
+      },
+      {
+        "category": "knows.relationships.miki",
+        "text": "Мики может резко защищать Акиру от давления"
+      },
+      {
+        "category": "knows.relationships.miki",
+        "text": "Кай может воспринимать заботливость Мики как раздражающую мягкость"
+      },
+      {
+        "category": "knows.relationships.alex",
+        "text": "Алекс рейдер 7-го отряда; её давление не похоже на электрический разряд Кая"
+      },
+      {
+        "category": "knows.relationships.haru",
+        "text": "Хару слишком живой, шумный и эмоциональный для Кая"
+      },
+      {
+        "category": "knows.relationships.samuel",
+        "text": "Самуэль известен как важная фигура системы и брат Райдена"
+      },
+      {
+        "category": "knows.relationships.samuel",
+        "text": "Кай не связан с Самуэлем как союзник или исполнитель"
+      },
+      {
+        "category": "knows.relationships.mother",
+        "text": "мать Кая пыталась защитить его, получила травму и умерла"
+      },
+      {
+        "category": "knows.relationships.mother",
+        "text": "эта смерть стала главным корнем его ненависти к слабости, жалости и беспомощности"
+      }
+    ],
+    "does_not_know_or_strict_unknowns": [
+      {
+        "category": "does_not_know.akira",
+        "text": "на старте не знает Акиру лично"
+      },
+      {
+        "category": "does_not_know.akira",
+        "text": "не знает имя Акиры до знакомства"
+      },
+      {
+        "category": "does_not_know.akira",
+        "text": "не знает прошлое Акиры"
+      },
+      {
+        "category": "does_not_know.akira",
+        "text": "не знает способности Акиры"
+      },
+      {
+        "category": "does_not_know.akira",
+        "text": "не знает связь Акиры с Самуэлем"
+      },
+      {
+        "category": "does_not_know.akira",
+        "text": "не знает про лабораторию"
+      },
+      {
+        "category": "does_not_know.akira",
+        "text": "не знает про эксперименты"
+      },
+      {
+        "category": "does_not_know.akira",
+        "text": "не знает про беременность Акиры"
+      },
+      {
+        "category": "does_not_know.akira",
+        "text": "не знает про потерю ребёнка"
+      },
+      {
+        "category": "does_not_know.akira",
+        "text": "не знает про амнезию Акиры"
+      },
+      {
+        "category": "does_not_know.akira",
+        "text": "не знает про Джуна и его роль в жизни Акиры"
+      },
+      {
+        "category": "does_not_know.raiden",
+        "text": "не знает прошлую связь Райдена и Акиры"
+      },
+      {
+        "category": "does_not_know.raiden",
+        "text": "не знает механизм потери памяти Райдена"
+      },
+      {
+        "category": "does_not_know.raiden",
+        "text": "не знает истинную природу цикла"
+      },
+      {
+        "category": "does_not_know.external_characters",
+        "text": "не знает про Ирэя"
+      },
+      {
+        "category": "does_not_know.external_characters",
+        "text": "не знает про Эмму"
+      },
+      {
+        "category": "does_not_know.external_characters",
+        "text": "не знает их цели и связи"
+      },
+      {
+        "category": "does_not_know.hidden_lore",
+        "text": "не знает скрытую роль Самуэля в лаборатории относительно Акиры"
+      },
+      {
+        "category": "does_not_know.hidden_lore",
+        "text": "не знает истинную природу Наблюдателя"
+      },
+      {
+        "category": "does_not_know.hidden_lore",
+        "text": "не знает hidden lore за пределами своего опыта и доступов"
+      }
+    ],
+    "hides_or_avoids": [
+      {
+        "category": "hides.from_others",
+        "text": "боль из-за смерти матери"
+      },
+      {
+        "category": "hides.from_others",
+        "text": "детское чувство беспомощности"
+      },
+      {
+        "category": "hides.from_others",
+        "text": "то, что жалость и защита задевают его не как идея, а как личная травма"
+      },
+      {
+        "category": "hides.from_others",
+        "text": "интерес или уважение, если они появились слишком рано для признания"
+      },
+      {
+        "category": "hides.visible_mask",
+        "text": "вместо боли показывает давление"
+      },
+      {
+        "category": "hides.visible_mask",
+        "text": "вместо заботы показывает раздражение"
+      },
+      {
+        "category": "hides.visible_mask",
+        "text": "вместо признания уважения может дать колкость"
+      }
+    ],
+    "misbeliefs_or_assumptions": [
+      {
+        "category": "mistaken_beliefs",
+        "text": "считает, что слабость почти всегда равна вине самого слабого"
+      },
+      {
+        "category": "mistaken_beliefs",
+        "text": "считает мягкость формой лжи"
+      },
+      {
+        "category": "mistaken_beliefs",
+        "text": "может считать Акиру слабой или слишком защищённой до того, как она докажет обратное"
+      },
+      {
+        "category": "mistaken_beliefs",
+        "text": "может считать, что если человек не отвечает, значит он ломается"
+      },
+      {
+        "category": "mistaken_beliefs",
+        "text": "может путать заботу с жалостью"
+      },
+      {
+        "category": "mistaken_beliefs",
+        "text": "может объяснять странную реакцию Райдена на Акиру обычным раздражением, пока сцены не покажут другое"
+      }
+    ],
+    "rules_or_disclosure": [
+      {
+        "category": "rules",
+        "text": "Этот файл хранит знания Кая: что он знает, чего не знает, во что ошибочно верит и какие границы hidden lore нельзя нарушать."
+      },
+      {
+        "category": "rules",
+        "text": "Кай не знает hidden lore, прошлое Акиры, связь Акиры и Райдена, лабораторию Самуэля, Ирэя, Эмму и механизм амнезии без отдельной сцены/документа/источника."
+      },
+      {
+        "category": "rules",
+        "text": "Если информация не раскрыта в сцене, Кай не знает её автоматически."
+      },
+      {
+        "category": "rules",
+        "text": "Кай может делать грубые выводы по поведению, страху, реакции тела и отношению окружающих, но вывод не равен точному знанию."
+      },
+      {
+        "category": "scene_knowledge_rules.start",
+        "text": "До знакомства использовать описание «красноволосый», если имя Кая ещё не прозвучало."
+      },
+      {
+        "category": "scene_knowledge_rules.start",
+        "text": "На старте Кай не знает Акиру лично."
+      },
+      {
+        "category": "scene_knowledge_rules.start",
+        "text": "Не писать, что Кай знает прошлое Акиры без сцены."
+      },
+      {
+        "category": "scene_knowledge_rules.start",
+        "text": "Если Кай замечает напряжение вокруг Акиры, он делает грубые выводы, но не понимает всю правду."
+      },
+      {
+        "category": "scene_knowledge_rules.inference_limits",
+        "text": "Кай может понять, что Акира необычная, если видит реакцию окружающих."
+      },
+      {
+        "category": "scene_knowledge_rules.inference_limits",
+        "text": "Кай может решить, что Акиру слишком защищают."
+      },
+      {
+        "category": "scene_knowledge_rules.inference_limits",
+        "text": "Кай может счесть её слабой, странной или раздражающе особой."
+      },
+      {
+        "category": "scene_knowledge_rules.inference_limits",
+        "text": "Кай не может из этого автоматически узнать её прошлое, амнезию, Самуэля, Райдена или лабораторию."
+      },
+      {
+        "category": "scene_knowledge_rules.forbidden",
+        "text": "не раскрывать через Кая hidden lore"
+      },
+      {
+        "category": "scene_knowledge_rules.forbidden",
+        "text": "не делать Кая всезнающим"
+      },
+      {
+        "category": "scene_knowledge_rules.forbidden",
+        "text": "не связывать Кая с лабораторией Самуэля"
+      },
+      {
+        "category": "scene_knowledge_rules.forbidden",
+        "text": "не делать Кая союзником Самуэля, Эммы или Ирэя"
+      },
+      {
+        "category": "scene_knowledge_rules.forbidden",
+        "text": "не давать Каю знание старой связи Райдена и Акиры без сцены"
+      },
+      {
+        "category": "scene_knowledge_rules.forbidden",
+        "text": "не давать Каю знание беременности/потери ребёнка без сцены"
+      },
+      {
+        "category": "scene_knowledge_rules.forbidden",
+        "text": "не раскрывать его боль о матери слишком рано"
+      },
+      {
+        "category": "scene_knowledge_rules.forbidden",
+        "text": "не использовать старую фамилию или старые сюжетные варианты"
+      }
+    ]
+  },
+  "migrated_dynamic_state_snapshot": {
+    "purpose": "Data migrated from old state/character_knowledge/<id>.json.",
+    "source_file": null,
+    "raw_keys_kept": []
+  },
+  "knowledge_source_rules": [
+    "Facts must come from direct experience, documents, orders, conversations, state updates or static character knowledge.",
+    "Calendar/loading/prompt rules are not character knowledge.",
+    "If a fact is not sourced for this character, store it as suspicion or do not store it."
+  ],
+  "protected_moments": [],
+  "compaction_notes": [
+    "Keep emotionally/logically important moments for this character.",
+    "Compress routine, not memory.",
+    "Keep source of knowledge when possible."
+  ],
+  "migration_status": "migrated_with_static_and_dynamic_knowledge_from_old_repo",
+  "migration_warnings": [
+    "Static character knowledge was copied into a snapshot; later split permanent canon vs start-state/temp knowledge if desired."
+  ]
+}

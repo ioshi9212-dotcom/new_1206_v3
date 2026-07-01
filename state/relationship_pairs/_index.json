@@ -1,27 +1,22 @@
 {
-  "id": "relationship_pair_index_1206",
-  "version": "v1",
-  "file_type": "relationship_pair_index",
-  "purpose": "Registry of relationship pair memory files. Loader must choose only relevant pairs.",
+  "id": "relationship_pairs_index_1206",
+  "version": "v2_migrated",
+  "rule": "Load a pair only if both participants are active/relevant, one directly references the other, or scene/calendar/open thread explicitly requires it. Do not load all Akira pairs by default.",
   "files": {
+    "akira__alex": "state/relationship_pairs/akira__alex.json",
+    "akira__emma": "state/relationship_pairs/akira__emma.json",
+    "akira__haru": "state/relationship_pairs/akira__haru.json",
+    "akira__irey": "state/relationship_pairs/akira__irey.json",
+    "akira__jun": "state/relationship_pairs/akira__jun.json",
+    "akira__kai": "state/relationship_pairs/akira__kai.json",
+    "akira__miki": "state/relationship_pairs/akira__miki.json",
     "akira__raiden": "state/relationship_pairs/akira__raiden.json",
     "akira__ray": "state/relationship_pairs/akira__ray.json",
-    "akira__miki": "state/relationship_pairs/akira__miki.json",
-    "akira__yuna": "state/relationship_pairs/akira__yuna.json",
-    "akira__haru": "state/relationship_pairs/akira__haru.json",
     "akira__shiro": "state/relationship_pairs/akira__shiro.json",
-    "akira__alex": "state/relationship_pairs/akira__alex.json",
-    "raiden__haru": "state/relationship_pairs/raiden__haru.json",
-    "miki__alex": "state/relationship_pairs/miki__alex.json",
-    "ray__yuna": "state/relationship_pairs/ray__yuna.json",
-    "jun__akira": "state/relationship_pairs/jun__akira.json",
+    "akira__yuna": "state/relationship_pairs/akira__yuna.json",
     "jun__ray": "state/relationship_pairs/jun__ray.json",
-    "irey__akira": "state/relationship_pairs/irey__akira.json",
-    "emma__akira": "state/relationship_pairs/emma__akira.json"
-  },
-  "critical_rule": [
-    "Do not load all Akira pairs by default.",
-    "Do not load a pair unless both characters are present/relevant or one directly thinks/speaks about the other and it matters to scene goal.",
-    "Do not convert pair memory into public knowledge or narrator spoilers."
-  ]
+    "miki__alex": "state/relationship_pairs/miki__alex.json",
+    "raiden__haru": "state/relationship_pairs/raiden__haru.json",
+    "ray__yuna": "state/relationship_pairs/ray__yuna.json"
+  }
 }

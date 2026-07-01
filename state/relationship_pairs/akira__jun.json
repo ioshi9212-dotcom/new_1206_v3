@@ -1,0 +1,92 @@
+{
+  "id": "relationship_pair_akira__jun",
+  "version": "v2_migrated_from_1206_v2_main_6",
+  "file_type": "relationship_pair_dynamic_state",
+  "pair_id": "akira__jun",
+  "participants": [
+    "akira",
+    "jun"
+  ],
+  "status": "inactive_until_relevant_scene",
+  "purpose": "Dynamic relationship memory for two characters. Stores both sides and shared hooks.",
+  "load_rules": [
+    "Load if both characters are active, nearby, speaking, observing each other, or one directly affects the other in the current scene.",
+    "Load if one character directly thinks/speaks about the other and the relationship is relevant to the current scene goal.",
+    "Do not load only because Akira is POV.",
+    "Do not load all Akira pairs by default."
+  ],
+  "surface_dynamic": {
+    "summary": "not_started_or_unknown",
+    "tension_level": "unknown",
+    "trust_level": "unknown",
+    "attachment_level": "unknown",
+    "conflict_level": "unknown"
+  },
+  "akira_to_jun": {
+    "visible_attitude": [],
+    "internal_state": [
+      "доверие"
+    ],
+    "knows": [],
+    "suspects": [],
+    "does_not_know": [],
+    "misreads": [],
+    "open_threads": [],
+    "next_reaction_hooks": [
+      "тёплое доверие за два года",
+      "score: 15"
+    ]
+  },
+  "jun_to_akira": {
+    "visible_attitude": [],
+    "internal_state": [],
+    "knows": [],
+    "suspects": [],
+    "does_not_know": [],
+    "misreads": [],
+    "open_threads": [],
+    "next_reaction_hooks": []
+  },
+  "shared_memory": [],
+  "protected_moments": [],
+  "migrated_relationship_snapshot": {
+    "source_files": [
+      "state/initial_relationships_1206.json",
+      "state/relationship_score_panel.json"
+    ],
+    "visible_start": {
+      "akira_to_jun": {
+        "score": 15,
+        "label": "доверие",
+        "note": "тёплое доверие за два года"
+      }
+    },
+    "hidden_start": {
+      "jun_to_akira": {
+        "attachment": 95,
+        "trust": 75,
+        "fear_for_her": 95,
+        "label": "отцовская любовь/защита"
+      },
+      "akira_to_jun_hidden": {
+        "attachment": 80,
+        "trust": 70,
+        "label": "любит как отца под блоком"
+      }
+    },
+    "rules": [],
+    "visible_score_panel": {
+      "akira__jun": {
+        "display_name": "Джун",
+        "visible_label": "Джун",
+        "score": 0,
+        "label": "неясно",
+        "source": "default_start_zero"
+      }
+    }
+  },
+  "compaction_rule": "Do not delete protected moments, unresolved tension, promises, threats, first impressions or meaningful object hooks.",
+  "visibility_guard": [
+    "Hidden migrated relationship data is for behavior guard only. It is not dialogue, POV knowledge, or automatic revelation."
+  ]
+}
