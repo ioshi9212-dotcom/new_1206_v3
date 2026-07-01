@@ -1,0 +1,42 @@
+{
+  "id": "session_npc_id",
+  "name_or_descriptor": "",
+  "status": "session_npc",
+  "npc_type": "background | functional | important_session_npc",
+  "role": "",
+  "age_range": "",
+  "first_seen": {
+    "date": "",
+    "location": "",
+    "scene_summary": ""
+  },
+  "voice": "",
+  "habit_or_visible_detail": "",
+  "current_goal_or_need": "",
+  "attitudes": {
+    "to_akira": "",
+    "to_raiden": "",
+    "to_ray": "",
+    "to_miki": "",
+    "other": {}
+  },
+  "relationships_or_group": [],
+  "knowledge": {
+    "saw": [],
+    "heard": [],
+    "knows_as_fact": [],
+    "suspects": [],
+    "misunderstands": [],
+    "does_not_know": []
+  },
+  "witness_value": [],
+  "rumors_heard": [],
+  "future_hooks": [],
+  "last_seen": {
+    "date": "",
+    "location": "",
+    "summary": ""
+  },
+  "save_reason": "why this NPC is no longer just background",
+  "cleanup_rule": "Keep while future_hooks, witness_value, repeated appearance or relationship effect are active. Compact/remove only if no longer relevant."
+}
