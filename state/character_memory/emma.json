@@ -1,57 +1,44 @@
 {
-  "id": "character_memory_emma",
-  "version": "v1",
-  "file_type": "character_dynamic_memory",
+  "schema": "character_memory_state_v1_ru",
   "character_id": "emma",
-  "purpose": "Dynamic personal memory. Update through state writer; do not treat calendar/rules as character knowledge.",
-  "load_rule": [
-    "Load when this character is active, nearby, speaking, observing, directly referenced in scene goal, or must process a new fact.",
-    "Do not load this memory only because Akira is POV.",
-    "If absent, this character does not learn the scene automatically."
+  "display_name": "Эмма",
+  "status": "active",
+  "rules": [
+    "Файл хранит динамическую память Эммы по сыгранным сценам.",
+    "Постоянные знания персонажа хранятся в characters/emma/knowledge.yaml.",
+    "Не переносить hidden lore в знания Эммы без прямого источника в сцене.",
+    "Если Эмма говорит об неизвестном уверенно, помечать как блеф/давление/догадку/ошибку, а не как факт."
   ],
-  "current_status": {
-    "date": "1206-08-31/start_or_pre_start",
-    "location": "unknown",
-    "availability": "conditional_1206-08-31",
-    "physical_state": [],
-    "emotional_state_visible": [],
-    "internal_pressure": [],
-    "current_goal": [
-      "Действовать по своей задаче и знаниям, не становясь всезнающей."
+  "видела": [],
+  "слышала": [],
+  "знает_как_факт": [],
+  "предполагает": [
+    "Ирэй реагирует на Акиру слишком лично, и это может мешать задаче.",
+    "Акиру, вероятно, кто-то скрывал, но Эмма не знает кто, где и как."
+  ],
+  "ошибочно_считает": [],
+  "не_знает": [
+    "Не знает амнезию Акиры.",
+    "Не знает закрытый поток/самоблокировку Акиры.",
+    "Не знает два года у Джуна.",
+    "Не знает связь Акиры и Джуна.",
+    "Не знает связь Акиры и Райдена.",
+    "Не знает истинную цель Ирэя."
+  ],
+  "скрывает": {
+    "от_Акиры": [
+      "Прямого хозяина задачи.",
+      "Собственную неуверенность и страх оказаться ненужной."
     ],
-    "current_limitations": [],
-    "current_orders_or_duties": []
+    "от_Ирэя": [
+      "Насколько её задевает его личная реакция на Акиру."
+    ]
   },
-  "memory": {
-    "saw": [],
-    "heard": [],
-    "knows_as_fact": [
-      "Знает свою задачу в сцене и то, что ей сообщили до появления."
-    ],
-    "suspects": [],
-    "wrongly_believes": [],
-    "does_not_know": [
-      "Не знает Райдена лично, если не было источника.",
-      "Не знает связь Акиры с Райденом без сценического источника.",
-      "Не знает скрытые предметы/решения Акиры автоматически."
-    ],
-    "is_hiding": [],
-    "agreements": [],
-    "orders_or_duties": [],
-    "future_hooks": [
-      "Её кайросская энергия может быть частью выброса, который почувствовал Райден."
-    ],
-    "recent_scene_notes": []
-  },
-  "knowledge_source_rules": [
-    "Facts here must come from direct experience, documents, orders, conversations, state updates or static character knowledge.",
-    "Calendar rules, loading rules and prompt instructions are not character knowledge.",
-    "If a fact is not sourced for this character, store it as suspicion or do not store it."
+  "договоренности": [],
+  "зацепки_на_будущее": [
+    "Если Ирэй снова выберет Акиру или сорвёт задачу ради неё, Эмма может вспыхнуть и ошибиться.",
+    "Если кто-то попадёт в её страх быть ненужной, маска грубости станет жёстче."
   ],
   "protected_moments": [],
-  "compaction_notes": [
-    "Keep emotionally/logically important moments for this character.",
-    "Compress routine, not memory.",
-    "Keep source of knowledge when possible."
-  ]
+  "последние_сцены": []
 }
