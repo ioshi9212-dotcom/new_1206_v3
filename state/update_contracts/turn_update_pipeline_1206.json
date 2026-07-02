@@ -1,0 +1,71 @@
+{
+  "id": "turn_update_pipeline_1206",
+  "file_type": "state_update_contract_rules",
+  "version": "1.0.0",
+  "status": "active",
+  "purpose": "Определяет путь от ответа ChatGPT к проверенным изменениям state после хода.",
+  "core_rule": "ChatGPT не изменяет файлы напрямую. ChatGPT возвращает proposed_updates. API проверяет их и только потом применяет через apply_turn_result.",
+  "pipeline": [
+    {
+      "step": 1,
+      "name": "receive_chatgpt_response",
+      "description": "API получает scene_text, choices/footer и proposed_updates."
+    },
+    {
+      "step": 2,
+      "name": "validate_response_shape",
+      "description": "Проверить ответ по chatgpt_scene_response.schema.json."
+    },
+    {
+      "step": 3,
+      "name": "validate_proposed_updates",
+      "description": "Проверить каждое обновление на источник, допустимость, видимость и привязку к сцене."
+    },
+    {
+      "step": 4,
+      "name": "reject_unsafe_updates",
+      "description": "Отклонить обновления без scene evidence, hidden/past trigger или с попыткой переписать канон."
+    },
+    {
+      "step": 5,
+      "name": "normalize_safe_updates",
+      "description": "Сжать безопасные обновления в короткие атомарные патчи."
+    },
+    {
+      "step": 6,
+      "name": "apply_turn_result",
+      "description": "Применить только подтверждённые изменения к state/character_memory, state/relationship_pairs и current_scene_state."
+    },
+    {
+      "step": 7,
+      "name": "write_audit",
+      "description": "Записать краткую диагностику: что применено, что отклонено, почему."
+    }
+  ],
+  "never_apply_directly": [
+    "hidden past as current known fact",
+    "future relationship state before scene evidence",
+    "new character presence without scene reason",
+    "POV choice made by assistant",
+    "identity/name knowledge without source",
+    "large rewrites of character cards",
+    "changes to characters/<id>/*.yaml from a normal scene turn"
+  ],
+  "allowed_targets": [
+    "state/character_memory/<id>.json",
+    "state/relationship_pairs/<a>__<b>.json",
+    "state/session_npcs.json",
+    "state/current_scene_state.json",
+    "state/scene_flags.json"
+  ],
+  "forbidden_targets_for_turn_updates": [
+    "characters/<id>/main.yaml",
+    "characters/<id>/character.yaml",
+    "characters/<id>/knowledge.yaml",
+    "characters/<id>/past.yaml",
+    "canon_lore/",
+    "calendar/",
+    "api_contracts/",
+    "gpt/scene_output/"
+  ]
+}

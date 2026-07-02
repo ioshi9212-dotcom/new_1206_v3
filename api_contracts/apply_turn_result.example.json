@@ -1,0 +1,45 @@
+{
+  "apply_turn_result_example": {
+    "turn_id": "example_turn_001",
+    "session_id": "example_session",
+    "accepted_updates": [
+      {
+        "target_type": "character_memory",
+        "target_id": "raiden",
+        "operation": "append_fact",
+        "path": "recent_observations",
+        "value": "Райден услышал имя 'Акира' от Рэя в кабинете, но не получил объяснения их прошлого.",
+        "scene_evidence": "Рэй назвал Акиру по имени при Райдене.",
+        "visibility": "surface",
+        "confidence": 0.9
+      },
+      {
+        "target_type": "relationship_pair",
+        "target_id": "akira__ray",
+        "operation": "adjust_relation",
+        "path": "surface_dynamic.tension",
+        "value": {
+          "change": "minor_increase",
+          "reason": "Акира восприняла контроль Рэя как давление."
+        },
+        "scene_evidence": "Рэй ограничил её выход с базы; Акира резко отреагировала.",
+        "visibility": "surface",
+        "confidence": 0.82
+      }
+    ],
+    "rejected_updates": [
+      {
+        "target_type": "relationship_pair",
+        "target_id": "akira__raiden",
+        "operation": "adjust_relation",
+        "reason_rejected": "Попытка активировать прошлую романтику без сценического триггера и без знания Райдена.",
+        "original_value": "romance_active"
+      }
+    ],
+    "diagnostics": {
+      "hidden_past_triggered": false,
+      "new_characters_added": [],
+      "forbidden_fallback_used": false
+    }
+  }
+}
