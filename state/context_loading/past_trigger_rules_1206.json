@@ -1,0 +1,51 @@
+{
+  "id": "past_trigger_rules_1206",
+  "version": "v1-conditional-hidden-context",
+  "file_type": "context_builder_rules",
+  "purpose": "Decide when characters/<id>/past.yaml can be included in scene_contract.",
+  "default": "do_not_load_past",
+  "allowed_triggers": [
+    {
+      "trigger": "direct_flashback",
+      "description": "The scene explicitly enters a flashback or memory sequence."
+    },
+    {
+      "trigger": "spoken_past_fact_with_source",
+      "description": "A character with valid knowledge says or asks about a past fact in-scene."
+    },
+    {
+      "trigger": "scene_goal_requires_past",
+      "description": "The scene goal explicitly says to process a past event, trauma, memory, document, or confession."
+    },
+    {
+      "trigger": "object_or_place_memory_trigger",
+      "description": "A meaningful object/place/date directly connected to past.yaml is active and noticed."
+    },
+    {
+      "trigger": "calendar_event_requires_past",
+      "description": "Current calendar slice marks a past-related beat as active now."
+    },
+    {
+      "trigger": "state_memory_open_hook",
+      "description": "character_memory contains an active open hook that directly points to a past event and current scene touches it."
+    }
+  ],
+  "not_valid_triggers": [
+    "player curiosity outside the scene",
+    "the author knows the past",
+    "the model wants stronger drama",
+    "the character's archetype suggests trauma",
+    "another unloaded file contains the information",
+    "relationship tension exists but no past fact is currently surfaced"
+  ],
+  "load_modes": {
+    "none": "past.yaml is not included; hidden facts go to forbidden_context if risky.",
+    "narrow_slice": "Only the relevant past block is included with exact trigger and who knows it.",
+    "full_past": "Allowed only for explicit flashback/author-debug/context-audit, not normal scene generation."
+  },
+  "required_when_loaded": [
+    "past_load_reason must be non-null in loaded_characters.source_files",
+    "visible_knowledge_boundaries must state who knows and who does not know the past fact",
+    "forbidden_context must state which related facts are still not available"
+  ]
+}

@@ -1,0 +1,217 @@
+{
+  "contract_version": "1206.scene_contract.v1",
+  "session_id": "example-session",
+  "turn_id": "example-turn-001",
+  "current_frame": {
+    "pov": {
+      "character_id": "haru",
+      "display_name": "Хару",
+      "is_player_character": false
+    },
+    "date": "1206-09-21",
+    "time_of_day": "вечер",
+    "location": {
+      "id": "east_sector_training_hall",
+      "name": "Тренировочный зал Восточного сектора",
+      "privacy_level": "public",
+      "area": "base",
+      "notes": "Шумная открытая зона."
+    },
+    "scene_goal": "Хару возвращается на базу и пересекается с Райденом после патруля. Акира в сцене отсутствует.",
+    "last_user_turn": "ПОВ: Хару. Вернуться в зал после задания и заметить Райдена у стены.",
+    "continuity_summary": "Хару только вернулся на базу. Райден на месте. Акира не присутствует и не упоминается как активная участница.",
+    "active_character_ids": [
+      "haru",
+      "raiden"
+    ]
+  },
+  "context_sources": {
+    "character_source_rule": "full_character_cards_only",
+    "character_files": [
+      "characters/<id>/main.yaml",
+      "characters/<id>/character.yaml",
+      "characters/<id>/knowledge.yaml",
+      "characters/<id>/past.yaml conditional"
+    ],
+    "memory_files": [
+      "state/character_memory/<id>.json"
+    ],
+    "relationship_files": [
+      "state/relationship_pairs/<a>__<b>.json relevant only"
+    ],
+    "forbidden_source_patterns": [
+      "short_character_summary_files",
+      "global_relationship_dump",
+      "hidden_past_without_trigger",
+      "fallback_insert_akira_when_absent"
+    ]
+  },
+  "loaded_characters": [
+    {
+      "character_id": "haru",
+      "display_name": "Харуяма Фостер",
+      "load_reason": [
+        "pov",
+        "physically_present"
+      ],
+      "source_files": {
+        "main": "characters/haru/main.yaml",
+        "character": "characters/haru/character.yaml",
+        "knowledge": "characters/haru/knowledge.yaml",
+        "memory": "state/character_memory/haru.json",
+        "past": null
+      },
+      "past_load_reason": null,
+      "content_blocks": [
+        {
+          "source_file": "characters/haru/main.yaml",
+          "block_type": "main",
+          "visibility": "normal",
+          "content": "role/appearance/status slice"
+        },
+        {
+          "source_file": "characters/haru/character.yaml",
+          "block_type": "character",
+          "visibility": "normal",
+          "content": "voice/behavior/combat/reaction slice"
+        },
+        {
+          "source_file": "characters/haru/knowledge.yaml",
+          "block_type": "knowledge",
+          "visibility": "normal",
+          "content": "known/unknown slice"
+        },
+        {
+          "source_file": "state/character_memory/haru.json",
+          "block_type": "memory",
+          "visibility": "normal",
+          "content": "current memory slice"
+        }
+      ]
+    },
+    {
+      "character_id": "raiden",
+      "display_name": "Райден Стерлинг",
+      "load_reason": [
+        "physically_present",
+        "speaking"
+      ],
+      "source_files": {
+        "main": "characters/raiden/main.yaml",
+        "character": "characters/raiden/character.yaml",
+        "knowledge": "characters/raiden/knowledge.yaml",
+        "memory": "state/character_memory/raiden.json",
+        "past": null
+      },
+      "past_load_reason": null,
+      "content_blocks": [
+        {
+          "source_file": "characters/raiden/main.yaml",
+          "block_type": "main",
+          "visibility": "normal",
+          "content": "role/appearance/status slice"
+        },
+        {
+          "source_file": "characters/raiden/character.yaml",
+          "block_type": "character",
+          "visibility": "normal",
+          "content": "voice/behavior/combat/reaction slice"
+        },
+        {
+          "source_file": "characters/raiden/knowledge.yaml",
+          "block_type": "knowledge",
+          "visibility": "normal",
+          "content": "known/unknown slice"
+        },
+        {
+          "source_file": "state/character_memory/raiden.json",
+          "block_type": "memory",
+          "visibility": "normal",
+          "content": "current memory slice"
+        }
+      ]
+    }
+  ],
+  "loaded_relationship_pairs": [
+    {
+      "pair_id": "raiden__haru",
+      "source_file": "state/relationship_pairs/raiden__haru.json",
+      "load_reason": [
+        "both_present",
+        "direct_dialogue"
+      ],
+      "content": {
+        "summary": "Текущая сцена между Райденом и Хару требует их динамику, но не требует Акиру."
+      }
+    }
+  ],
+  "visible_knowledge_boundaries": [
+    {
+      "character_id": "haru",
+      "known": [
+        "Райден присутствует в зале",
+        "Хару знает Райдена лично"
+      ],
+      "unknown": [
+        "Текущие мысли Райдена, если они не сказаны или не видны"
+      ],
+      "must_not_assume": [
+        "Не раскрывать hidden past без триггера"
+      ]
+    },
+    {
+      "character_id": "raiden",
+      "known": [
+        "Хару вернулся и находится рядом"
+      ],
+      "unknown": [
+        "Скрытые факты прошлого, если они не активированы сценой"
+      ],
+      "must_not_assume": [
+        "Не знать отсутствующих персонажей и их действия без источника"
+      ]
+    }
+  ],
+  "forbidden_context": [
+    {
+      "id": "akira_absent_no_fallback",
+      "reason": "Акира отсутствует, не POV, не активная участница и не нужна scene_goal.",
+      "applies_to": [
+        "loaded_characters"
+      ]
+    },
+    {
+      "id": "past_not_triggered",
+      "reason": "В сцене нет флэшбека, признания или прямого разговора о прошлом.",
+      "applies_to": [
+        "characters/haru/past.yaml",
+        "characters/raiden/past.yaml"
+      ]
+    }
+  ],
+  "state_snapshot": {
+    "scene_temperature": "normal",
+    "npc_density": "public background possible",
+    "builder_notes": "No Akira fallback. Full cards only."
+  },
+  "output_requirements": {
+    "response_schema": "api_contracts/chatgpt_scene_response.schema.json",
+    "style_rules": [
+      "third person limited POV in scene body",
+      "footer in first person current POV",
+      "propose state updates only; do not write state directly"
+    ],
+    "state_update_mode": "propose_patch_only"
+  },
+  "diagnostics": {
+    "builder_version": "1206.context_builder.v1",
+    "blocked_fallbacks": [
+      "default_protagonist_insertion"
+    ],
+    "selected_by": [
+      "character_selection_rules_1206",
+      "relationship_pair_loading_rules_1206",
+      "past_trigger_rules_1206"
+    ]
+  }
+}

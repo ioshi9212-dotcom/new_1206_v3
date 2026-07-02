@@ -1,0 +1,50 @@
+{
+  "id": "forbidden_fallback_rules_1206",
+  "version": "v1",
+  "file_type": "context_builder_rules",
+  "purpose": "Fallbacks that the context builder must not use because they caused old scene errors.",
+  "forbidden_fallbacks": [
+    {
+      "id": "default_protagonist_insertion",
+      "rule": "Do not insert Akira into scene_ids or loaded_characters just because the active list is empty.",
+      "correct_behavior": "Return builder diagnostic: active character selection failed."
+    },
+    {
+      "id": "summary_as_behavior_source",
+      "rule": "Do not replace full character files with a short personality summary.",
+      "correct_behavior": "Load main, character, knowledge and memory for every selected character."
+    },
+    {
+      "id": "hidden_past_as_motivation",
+      "rule": "Do not use hidden past to drive dialogue, narration or reaction unless past_trigger_rules allow it.",
+      "correct_behavior": "Keep hidden fact out of context and add it to forbidden_context if needed."
+    },
+    {
+      "id": "global_relationship_dump",
+      "rule": "Do not load all relationship pairs for a POV or all pairs connected to Akira.",
+      "correct_behavior": "Load only pairs selected by relationship_pair_loading_rules_1206.json."
+    },
+    {
+      "id": "calendar_as_character_knowledge",
+      "rule": "Do not treat calendar/canon notes as something a character knows.",
+      "correct_behavior": "Convert only visible, sourced facts into knowledge_boundary."
+    },
+    {
+      "id": "npc_knows_identity_without_source",
+      "rule": "Do not let NPCs know names, roles, relationships or hidden status without source in loaded knowledge/memory/scene.",
+      "correct_behavior": "Put missing source facts into unknown/must_not_assume."
+    },
+    {
+      "id": "force_arrival_without_trigger",
+      "rule": "Do not make a character physically arrive because they are important to plot.",
+      "correct_behavior": "Arrival requires calendar, location, message, order, patrol, prior motion, or direct scene trigger."
+    }
+  ],
+  "diagnostic_required_when_fallback_would_have_been_used": true,
+  "diagnostic_shape": {
+    "severity": "warning | error",
+    "fallback_blocked": "id from forbidden_fallbacks",
+    "reason": "why old fallback would be unsafe",
+    "needed_input": "what frame/source data is missing"
+  }
+}

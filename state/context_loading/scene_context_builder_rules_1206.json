@@ -1,0 +1,114 @@
+{
+  "id": "scene_context_builder_rules_1206",
+  "version": "v1-full-cards-context-builder",
+  "file_type": "context_builder_rules",
+  "purpose": "Machine-readable rules for building scene_contract from clean v3 content files before calling ChatGPT.",
+  "core_principle": "The builder selects only relevant full character cards, current memory, relevant relationship pairs, current frame data, and conditional past triggers. It must not invent context or center every scene on Akira.",
+  "valid_character_source_order": [
+    "characters/<id>/main.yaml",
+    "characters/<id>/character.yaml",
+    "characters/<id>/knowledge.yaml",
+    "state/character_memory/<id>.json",
+    "characters/<id>/past.yaml only when triggered"
+  ],
+  "build_steps": [
+    {
+      "step": 1,
+      "name": "read_current_frame",
+      "must_have": [
+        "session_id",
+        "pov.character_id",
+        "date",
+        "time_of_day",
+        "location",
+        "scene_goal",
+        "last_user_turn"
+      ],
+      "rule": "Do not repair missing current_frame by assuming Akira or a default location. Return a builder error if required frame data is absent."
+    },
+    {
+      "step": 2,
+      "name": "select_scene_characters",
+      "use_rules_file": "state/context_loading/character_selection_rules_1206.json",
+      "rule": "Select POV first, then physically present/active characters, then only characters required by current scene goal or direct relevant mention."
+    },
+    {
+      "step": 3,
+      "name": "load_character_cards",
+      "required_for_each_loaded_character": [
+        "main.yaml",
+        "character.yaml",
+        "knowledge.yaml",
+        "character_memory.json"
+      ],
+      "conditional_for_each_loaded_character": [
+        "past.yaml"
+      ],
+      "past_rule_file": "state/context_loading/past_trigger_rules_1206.json"
+    },
+    {
+      "step": 4,
+      "name": "select_relationship_pairs",
+      "use_rules_file": "state/context_loading/relationship_pair_loading_rules_1206.json",
+      "rule": "Load only pairs relevant to current scene. A protagonist relationship is not loaded just because the protagonist exists."
+    },
+    {
+      "step": 5,
+      "name": "select_location_calendar_npc_context",
+      "sources": [
+        "calendar/calendar_index_ru.yaml and matching calendar/days/*.yaml",
+        "canon_lore/east_sector/*.yaml if location requires it",
+        "canon_lore/social/npc_presence_rules_1206_ru.yaml if social/public logic is needed",
+        "state/context_loading/npc_context_loading_rules_1206.json"
+      ],
+      "rule": "Use only the slice needed by current date, location, privacy level, and scene goal."
+    },
+    {
+      "step": 6,
+      "name": "write_knowledge_boundaries",
+      "rule": "For each loaded character, explicitly state known, unknown, and must_not_assume. This is mandatory when names, past, relationships, location knowledge, or hidden facts are involved."
+    },
+    {
+      "step": 7,
+      "name": "write_forbidden_context",
+      "rule": "List facts not loaded or not yet known that ChatGPT must not use in narration, dialogue, or NPC decisions."
+    },
+    {
+      "step": 8,
+      "name": "emit_scene_contract",
+      "schema": "api_contracts/scene_contract.schema.json",
+      "rule": "ChatGPT receives scene_contract, not the whole repository."
+    }
+  ],
+  "minimum_loaded_character_blocks": [
+    "main",
+    "character",
+    "knowledge",
+    "memory"
+  ],
+  "conditional_blocks": {
+    "past": "Load only if state/context_loading/past_trigger_rules_1206.json returns allowed=true."
+  },
+  "do_not_compact_behavior_into": [
+    "one-line personality labels",
+    "generic archetypes",
+    "single mood descriptions",
+    "global cast summaries"
+  ],
+  "builder_failure_rules": [
+    "If a selected character is missing main/character/knowledge/memory files, return a diagnostic error instead of silently replacing them with a summary.",
+    "If no active character can be selected, return a diagnostic error instead of choosing Akira automatically.",
+    "If a pair is requested but both directions are ambiguous, use the existing canonical pair file name from state/relationship_pairs/ and record the load reason.",
+    "If hidden/past context is desired but no trigger exists, do not load it; add it to forbidden_context."
+  ],
+  "required_scene_contract_sections": [
+    "current_frame",
+    "context_sources",
+    "loaded_characters",
+    "loaded_relationship_pairs",
+    "visible_knowledge_boundaries",
+    "forbidden_context",
+    "output_requirements",
+    "diagnostics"
+  ]
+}

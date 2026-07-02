@@ -1,0 +1,84 @@
+{
+  "id": "character_selection_rules_1206",
+  "version": "v1-no-default-protagonist",
+  "file_type": "context_builder_rules",
+  "purpose": "Decide which character folders must be loaded for one scene_contract.",
+  "selection_priority": [
+    {
+      "priority": 1,
+      "load_reason": "pov",
+      "condition": "character_id equals current_frame.pov.character_id",
+      "required": true
+    },
+    {
+      "priority": 2,
+      "load_reason": "physically_present",
+      "condition": "character is physically in the current location or explicitly nearby and able to observe/hear"
+    },
+    {
+      "priority": 3,
+      "load_reason": "speaking",
+      "condition": "character speaks in the last turn, is expected to answer, or is currently addressed"
+    },
+    {
+      "priority": 4,
+      "load_reason": "directly_addressed",
+      "condition": "last_user_turn or active NPC directly addresses this character"
+    },
+    {
+      "priority": 5,
+      "load_reason": "mentioned_with_relevance",
+      "condition": "character is mentioned and the mention changes action, emotion, decision, risk, or knowledge in this scene"
+    },
+    {
+      "priority": 6,
+      "load_reason": "scene_goal_requires",
+      "condition": "scene_goal is about this character, their duty, their order, their arrival, their absence, or their consequences"
+    },
+    {
+      "priority": 7,
+      "load_reason": "relationship_pair_requires",
+      "condition": "a selected relationship pair cannot be interpreted without this character's current memory"
+    },
+    {
+      "priority": 8,
+      "load_reason": "calendar_requires",
+      "condition": "current calendar slice explicitly activates this character now"
+    }
+  ],
+  "do_not_select_character_when": [
+    "character only exists in the broader cast but has no current scene role",
+    "character appears only in hidden past and past trigger is absent",
+    "character is important to the story globally but absent from this scene",
+    "character is a future arrival not yet reached by current date/time",
+    "character is only part of an unrelated relationship pair"
+  ],
+  "akira_specific_rule": {
+    "load_akira_when": [
+      "pov is akira",
+      "Akira is physically present",
+      "Akira speaks, acts, is addressed, observed, followed, or directly discussed",
+      "scene_goal is directly about Akira",
+      "a relevant relationship pair with Akira is selected for this scene"
+    ],
+    "do_not_load_akira_when": [
+      "pov is another character and Akira is absent",
+      "Akira is not mentioned with current scene relevance",
+      "the scene is about another character's work, private conflict, duty, relationship, or location",
+      "only broad canon or protagonist status would justify loading her"
+    ]
+  },
+  "load_result_shape": {
+    "character_id": "string",
+    "load_reason": [
+      "pov | physically_present | speaking | directly_addressed | mentioned_with_relevance | scene_goal_requires | relationship_pair_requires | calendar_requires"
+    ],
+    "source_files": [
+      "characters/<id>/main.yaml",
+      "characters/<id>/character.yaml",
+      "characters/<id>/knowledge.yaml",
+      "state/character_memory/<id>.json",
+      "characters/<id>/past.yaml only if allowed by past_trigger_rules"
+    ]
+  }
+}
