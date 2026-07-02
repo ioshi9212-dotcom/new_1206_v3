@@ -53,4 +53,3 @@ links:
   knowledge: "characters/kai/knowledge.yaml"
   past: "characters/kai/past.yaml"
   memory: "state/character_memory/kai.json"
-  runtime: "runtime/characters/kai.yaml"

@@ -54,7 +54,6 @@ linked_files:
   character: "characters/emma/character.yaml"
   knowledge: "characters/emma/knowledge.yaml"
   past: "characters/emma/past.yaml"
-  runtime_summary: "runtime/characters/emma.yaml"
   dynamic_memory: "state/character_memory/emma.json"
 
 hard_rules:

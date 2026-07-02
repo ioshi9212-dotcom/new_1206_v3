@@ -58,7 +58,6 @@ linked_files:
   knowledge: characters/haru/knowledge.yaml
   past: characters/haru/past.yaml
   dynamic_memory: state/character_memory/haru.json
-  runtime: runtime/characters/haru.yaml
 do_not_store_here:
 - текущие сценовые знания
 - отношения в динамике
