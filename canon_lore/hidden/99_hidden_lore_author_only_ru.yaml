@@ -2,7 +2,7 @@ id: "hidden_lore_author_only_ru"
 file_type: "author_hidden_lore"
 version: "v1_1_timeline_ru"
 load_mode: "author_only"
-status: "not_for_runtime_default"
+status: "author_only_not_for_default_scene_context"
 
 назначение:
   - "Скрытый лор для автора."

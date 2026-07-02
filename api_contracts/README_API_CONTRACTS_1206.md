@@ -56,7 +56,7 @@ state/character_memory/<id>.json
 characters/
 state/character_memory/*.json
 state/relationship_pairs/*.json
-runtime/characters/
+короткие отдельные summary-файлы персонажей
 полный app/Railway код
 ```
 
