@@ -1,0 +1,106 @@
+{
+  "session_id": "template",
+  "project_slug": "akira-1206-v3",
+  "story": "akira_1206_v3",
+  "current_scene_id": "start_scene",
+  "scene_id": "start_scene",
+  "current_date": "1206-08-31",
+  "date": "1206-08-31",
+  "current_day_phase": "поздняя ночь",
+  "time_of_day": "поздняя ночь",
+  "current_location_id": "jun_house_akira_room",
+  "location_id": "jun_house_akira_room",
+  "current_location_text": "дом Джуна Картера, комната Акиры",
+  "pov_character_id": "akira",
+  "active_character_ids": [
+    "akira",
+    "jun",
+    "irey",
+    "emma"
+  ],
+  "scene_character_ids": [
+    "akira",
+    "jun",
+    "irey",
+    "emma"
+  ],
+  "present_character_ids": [
+    "akira",
+    "jun",
+    "irey",
+    "emma"
+  ],
+  "conditional_character_ids": [
+    "raiden",
+    "ray"
+  ],
+  "relationship_pair_ids": [
+    "akira__jun",
+    "akira__irey",
+    "akira__emma"
+  ],
+  "current_outfit": "серая пижама — футболка и шорты; босиком",
+  "visible_inventory": [
+    "записка: Рэй / Восточный сектор"
+  ],
+  "nearby_items": [
+    "дверь",
+    "окно",
+    "стол",
+    "записка",
+    "документы"
+  ],
+  "inventory_state": {
+    "note_ray_east_sector": "visible_start_scene_item; after exact first output Akira has read/taken it unless player rewrites action through applyTurnResult",
+    "cover_documents": "visible_on_table_start_scene"
+  },
+  "scene_goal": "Стартовая сцена: поздняя ночь. Акира просыпается от голосов Эммы и Ирэя внизу; Джун тянет время; записка ведёт к Рэю / Восточному сектору.",
+  "current_scene_goal": "Стартовая сцена: поздняя ночь. Акира просыпается от голосов Эммы и Ирэя внизу; Джун тянет время; записка ведёт к Рэю / Восточному сектору.",
+  "last_player_input": "начнем",
+  "voice_identity_map_hidden": {
+    "Женский голос снизу": "emma",
+    "Незнакомый мужской голос": "irey"
+  },
+  "visible_relationships_start": {
+    "jun": {
+      "score": 15,
+      "label": "доверие",
+      "visible_label": "Джун"
+    },
+    "irey": {
+      "score": 1,
+      "label": "настороженность",
+      "visible_label": "Незнакомый мужской голос"
+    },
+    "emma": {
+      "score": -2,
+      "label": "угроза",
+      "visible_label": "Женский голос снизу"
+    }
+  },
+  "start_scene_file": "scenes/start_scene.md",
+  "start_scene_logic_file": "scenes/start_scene_logic.md",
+  "start_scene_exact_text_required": true,
+  "start_scene_completed": false,
+  "weather": {
+    "summary": "прохладная поздняя ночь; воздух неподвижный",
+    "temperature_feel": "прохладно",
+    "details": []
+  },
+  "akira_state": {
+    "visible_state": "резко проснулась; внешне собрана",
+    "internal_state": "эмоции заблокированы; память держит только последние два года",
+    "body_state": "тело собрано раньше памяти",
+    "hair_state": "сонные растрёпанные белые волосы"
+  },
+  "rules": [
+    "Use only akira-1206-v3 data.",
+    "Start date is 1206-08-31, phase is поздняя ночь.",
+    "No Akira fallback is needed because the start scene explicitly selects characters.",
+    "Do not reveal hidden lore automatically.",
+    "Do not load past.yaml only because of words like записка, документы or Джун.",
+    "Ray and Raiden are conditional; do not place them in the first scene without later scene source."
+  ],
+  "created_at": "2026-07-02T17:40:45.124370",
+  "updated_at": "2026-07-02T17:40:45.124370"
+}

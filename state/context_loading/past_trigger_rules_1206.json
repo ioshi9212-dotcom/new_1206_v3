@@ -1,6 +1,6 @@
 {
   "id": "past_trigger_rules_1206",
-  "version": "v2-strict-hidden-past-triggers",
+  "version": "v2-strong-trigger-guard",
   "file_type": "context_builder_rules",
   "purpose": "Decide when characters/<id>/past.yaml can be included in scene_contract.",
   "default": "do_not_load_past",
@@ -36,7 +36,10 @@
     "the model wants stronger drama",
     "the character's archetype suggests trauma",
     "another unloaded file contains the information",
-    "relationship tension exists but no past fact is currently surfaced"
+    "relationship tension exists but no past fact is currently surfaced",
+    "ordinary inventory words such as записка, документы, блокнот",
+    "ordinary presence of Jun or Jun house",
+    "ordinary start-scene setup without explicit flashback/memory request"
   ],
   "load_modes": {
     "none": "past.yaml is not included; hidden facts go to forbidden_context if risky.",
@@ -48,28 +51,5 @@
     "visible_knowledge_boundaries must state who knows and who does not know the past fact",
     "forbidden_context must state which related facts are still not available"
   ],
-  "false_positive_guard": {
-    "rule": "Ordinary inventory/setup words do not load past.yaml.",
-    "not_enough_by_themselves": [
-      "записка",
-      "документы",
-      "блокнот",
-      "Джун mentioned as current guardian/source",
-      "мать/отец as generic relation words"
-    ],
-    "example": "Взять записку, документы и блокнот в стартовой сцене should not load characters/akira/past.yaml."
-  },
-  "explicit_code_rules": {
-    "load_past_when": [
-      "past_trigger_character_ids contains character_id",
-      "load_past or past_triggered is true in current_state",
-      "scene text contains strong memory/past trigger words",
-      "scene text contains narrow past-linked phrases such as след от кольца, шрам на животе, фамилия Картер"
-    ],
-    "do_not_load_past_when": [
-      "the scene only mentions taking/holding a note, documents, notebook, or routine setup items",
-      "the note exists as an inventory clue but its hidden meaning is not being examined",
-      "a character name appears without explicit past/memory/flashback context"
-    ]
-  }
+  "strong_trigger_note": "Builder should load past.yaml only from explicit past/flashback/trauma/source triggers, not from ordinary start-scene items."
 }

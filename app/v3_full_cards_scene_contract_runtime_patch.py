@@ -27,9 +27,11 @@ RUNTIME_VERSION = base.APP_VERSION
 CURRENT_STATE_FILE = "state/current_state.json"
 SCENE_HISTORY_FILE = "state/scene_history.json"
 CALENDAR_RUNTIME_FILE = "state/calendar_runtime.json"
+START_SCENE_PATH = "scenes/start_scene.md"
+START_SCENE_LOGIC_PATH = "scenes/start_scene_logic.md"
 
 # Content folders that must be copied from the repository into DATA on Railway.
-for _name in ["api_contracts", "calendar", "canon_lore", "characters", "gpt", "state"]:
+for _name in ["api_contracts", "calendar", "canon_lore", "characters", "gpt", "state", "scenes"]:
     try:
         if _name not in base.SYNC_FROM_REPO:
             base.SYNC_FROM_REPO.append(_name)
@@ -68,7 +70,7 @@ CHARACTER_FIELDS = (
 # Do not include common scene/inventory words like "записка", "документы", "Джун",
 # "мать" or "отец" here: they caused past.yaml to load during ordinary setup.
 PAST_TRIGGER_WORDS = (
-    "прошл", "вспом", "памят", "флэшбек", "флешбек",
+    "прошл", "вспом", "флэшбек", "флешбек",
     "академ", "1198", "1170",
     "беремен", "ребен", "ребён", "плен", "самуэль", "samuel", "браслет",
     "пожар", "срыв", "эксперимент", "лаборатор",
@@ -383,6 +385,44 @@ def _relationship_slice(session_id: str, scene_ids: list[str], current: dict[str
     return result
 
 
+
+def _extract_first_text_block(markdown: str) -> str:
+    marker = "## Текст первого вывода"
+    start = markdown.find(marker)
+    if start == -1:
+        return markdown.strip()
+    next_section = markdown.find("\n## ", start + len(marker))
+    section = markdown[start: next_section if next_section != -1 else len(markdown)]
+    block_start = section.find("```text")
+    if block_start == -1:
+        block_start = section.find("```")
+    if block_start == -1:
+        return section.strip()
+    content_start = section.find("\n", block_start)
+    block_end = section.find("```", content_start + 1)
+    if content_start == -1 or block_end == -1:
+        return section.strip()
+    return section[content_start + 1:block_end].strip()
+
+
+def _start_scene_slice(session_id: str, current: dict[str, Any]) -> dict[str, Any]:
+    exact_required = bool(current.get("start_scene_exact_text_required")) and not bool(current.get("start_scene_completed"))
+    start_file = str(current.get("start_scene_file") or START_SCENE_PATH)
+    logic_file = str(current.get("start_scene_logic_file") or START_SCENE_LOGIC_PATH)
+    exact_text = _extract_first_text_block(_read_text(start_file, session_id)) if exact_required else ""
+    logic_text = _read_text(logic_file, session_id) if exact_required else ""
+    return {
+        "is_start_scene": current.get("current_scene_id") in {"start_scene", "1206_start"},
+        "exact_text_required": exact_required,
+        "start_scene_completed": bool(current.get("start_scene_completed")),
+        "source_file": start_file if exact_required else None,
+        "logic_file": logic_file if exact_required else None,
+        "exact_text": _trim(exact_text, 7200),
+        "logic_notes": _trim(logic_text, 4200),
+        "render_instruction": "If exact_text_required=true, output exact_text as the first scene instead of rewriting it.",
+    }
+
+
 def _calendar_slice(session_id: str, current: dict[str, Any]) -> dict[str, Any]:
     calendar = _read_json(CALENDAR_RUNTIME_FILE, session_id, {})
     if not isinstance(calendar, dict):
@@ -428,6 +468,10 @@ def _current_frame(current: dict[str, Any], pov: str | None, active_ids: list[st
         "visible_inventory": _compact(current.get("visible_inventory", []), max_chars=500, max_items=8, depth=2),
         "nearby_items": _compact(current.get("nearby_items", []), max_chars=500, max_items=8, depth=2),
         "scene_goal": _trim(current.get("scene_goal") or current.get("scene_goal_text"), 520),
+        "current_outfit": _trim(current.get("current_outfit"), 320),
+        "inventory_state": _compact(current.get("inventory_state", {}), max_chars=700, max_items=8, depth=2),
+        "conditional_character_ids": _compact(current.get("conditional_character_ids", []), max_chars=300, max_items=8, depth=2),
+        "visible_relationships_start": _compact(current.get("visible_relationships_start", {}), max_chars=900, max_items=8, depth=3),
     }
 
 
@@ -447,6 +491,7 @@ def build_v3_scene_contract_response(session_id: str, *, max_total_chars: int = 
         "version": "scene_contract_1206_v3_full_cards_v1",
         "current_frame": _current_frame(current, pov, active_ids, scene_ids, selection_reasons),
         "calendar_slice": _calendar_slice(sid, current),
+        "start_scene": _start_scene_slice(sid, current),
         "loaded_characters": character_cards,
         "loaded_relationship_pairs": relationship_slice,
         "recent_scene_history": _recent_history(sid),
@@ -464,6 +509,7 @@ def build_v3_scene_contract_response(session_id: str, *, max_total_chars: int = 
         ],
         "render_rules": [
             "Write from this scene_contract only.",
+            "If scene_contract.start_scene.exact_text_required=true, output scene_contract.start_scene.exact_text exactly as the first scene before normal play.",
             "Use loaded_characters.<id>.main_yaml + character_yaml + knowledge_yaml + character_memory as primary behavior source.",
             "Session memory overrides static baseline for events already played.",
             "Do not make important choices for the POV character.",

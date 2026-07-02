@@ -1,0 +1,25 @@
+{
+  "schema": "calendar_runtime_v3_start_state",
+  "project": "akira-1206-v3",
+  "current_date": "1206-08-31",
+  "current_day_file": "calendar/days/1206-08-31.yaml",
+  "current_day_phase": "поздняя ночь",
+  "time_of_day": "поздняя ночь",
+  "active_window": "start_pressure_node",
+  "current_beat_id": "house_pressure_open",
+  "completed_beat_ids": [],
+  "skipped_beat_ids": [],
+  "introduced_character_ids": [],
+  "pending_events": [
+    "player_reaction_window",
+    "raiden_delayed_conditional_arrival",
+    "samuel_people_search_and_pursuit_latency",
+    "east_sector_contact_if_branch_reaches_it"
+  ],
+  "rules": [
+    "Calendar defines world pressure and consequences, not Akira's scripted actions.",
+    "Normal play loads only the current day file.",
+    "Conditional arrivals require plausible in-world time and distance.",
+    "Sleep/rest/timeskip should jump to the next meaningful beat."
+  ]
+}

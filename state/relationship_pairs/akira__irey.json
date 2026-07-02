@@ -10,6 +10,7 @@
   "status": "active_if_irey_present",
   "purpose": "Dynamic relationship memory for two characters. Stores both sides and shared hooks.",
   "load_rules": [
+    "Load for the canonical start_scene because both participants are active/sensed and the pair has visible first-scene pressure.",
     "Load if both characters are active, nearby, speaking, observing each other, or one directly affects the other in the current scene.",
     "Load if one character directly thinks/speaks about the other and the relationship is relevant to the current scene goal.",
     "Load if current calendar day or open thread explicitly requires this pair.",
@@ -68,5 +69,11 @@
     "Keep exact or paraphrased phrases/actions that strongly affected either character.",
     "Keep who knows what and what each side does not know.",
     "Keep future hooks until explicitly resolved."
-  ]
+  ],
+  "visible_start_scene": {
+    "score": 1,
+    "label": "настороженность",
+    "visible_label": "Незнакомый мужской голос",
+    "note": "чужой в доме; имя может всплыть как фрагмент, не осознанная память"
+  }
 }
