@@ -1,0 +1,318 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://1206.local/api_contracts/scene_contract.schema.json",
+  "title": "1206 Scene Contract",
+  "description": "Контракт контекста, который API/сборщик отдаёт ChatGPT перед генерацией сцены. Главный принцип: персонажи читаются из полных карточек characters/<id>/, а не из коротких summary-файлов.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract_version",
+    "session_id",
+    "current_frame",
+    "context_sources",
+    "loaded_characters",
+    "loaded_relationship_pairs",
+    "visible_knowledge_boundaries",
+    "forbidden_context",
+    "output_requirements"
+  ],
+  "properties": {
+    "contract_version": {
+      "type": "string",
+      "const": "1206.scene_contract.v1"
+    },
+    "session_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "turn_id": {
+      "type": "string",
+      "description": "Уникальный ID текущего хода, если API его ведёт."
+    },
+    "current_frame": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["pov", "date", "time_of_day", "location", "scene_goal", "last_user_turn"],
+      "properties": {
+        "pov": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["character_id", "display_name"],
+          "properties": {
+            "character_id": { "type": "string", "minLength": 1 },
+            "display_name": { "type": "string", "minLength": 1 },
+            "is_player_character": { "type": "boolean", "default": true }
+          }
+        },
+        "date": {
+          "type": "string",
+          "description": "Дата внутри мира/сессии, например 1206-09-14 или текстовый маркер календаря."
+        },
+        "time_of_day": {
+          "type": "string",
+          "description": "Время или часть дня внутри сцены."
+        },
+        "location": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["id", "name", "privacy_level"],
+          "properties": {
+            "id": { "type": "string", "minLength": 1 },
+            "name": { "type": "string", "minLength": 1 },
+            "privacy_level": {
+              "type": "string",
+              "enum": ["private", "quiet_open", "public", "functional", "unknown"]
+            },
+            "area": { "type": "string" },
+            "notes": { "type": "string" }
+          }
+        },
+        "scene_goal": {
+          "type": "string",
+          "description": "Что должна продолжить сцена: реакция, диалог, проверка, переход, конфликт, отдых и т.д."
+        },
+        "last_user_turn": {
+          "type": "string",
+          "description": "Последний ввод игрока без переписывания и домыслов."
+        },
+        "continuity_summary": {
+          "type": "string",
+          "description": "Коротко только то, что нужно для текущего хода. Не заменяет память персонажей."
+        },
+        "active_character_ids": {
+          "type": "array",
+          "items": { "type": "string" },
+          "uniqueItems": true,
+          "default": []
+        },
+        "mentioned_character_ids": {
+          "type": "array",
+          "items": { "type": "string" },
+          "uniqueItems": true,
+          "default": []
+        }
+      }
+    },
+    "context_sources": {
+      "type": "object",
+      "description": "Разрешённые источники контекста. Короткие отдельные character summary-файлы не являются источником поведения.",
+      "additionalProperties": false,
+      "required": ["character_source_rule", "character_files", "memory_files", "relationship_files"],
+      "properties": {
+        "character_source_rule": {
+          "type": "string",
+          "const": "full_character_cards_only"
+        },
+        "character_files": {
+          "type": "array",
+          "minItems": 3,
+          "items": {
+            "type": "string",
+            "enum": [
+              "characters/<id>/main.yaml",
+              "characters/<id>/character.yaml",
+              "characters/<id>/knowledge.yaml",
+              "characters/<id>/past.yaml conditional"
+            ]
+          }
+        },
+        "memory_files": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": ["state/character_memory/<id>.json"]
+          }
+        },
+        "relationship_files": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": ["state/relationship_pairs/<a>__<b>.json relevant only"]
+          }
+        },
+        "forbidden_source_patterns": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "short_character_summary_files",
+            "global_relationship_dump",
+            "hidden_past_without_trigger",
+            "fallback_insert_akira_when_absent"
+          ]
+        }
+      }
+    },
+    "loaded_characters": {
+      "type": "array",
+      "description": "Персонажи, реально загруженные в текущий контекст. Не добавлять Акиру автоматически, если её нет в POV/сцене/цели/упоминании.",
+      "items": { "$ref": "#/$defs/loaded_character" },
+      "default": []
+    },
+    "loaded_relationship_pairs": {
+      "type": "array",
+      "description": "Только пары, которые реально нужны текущей сцене.",
+      "items": { "$ref": "#/$defs/loaded_relationship_pair" },
+      "default": []
+    },
+    "visible_knowledge_boundaries": {
+      "type": "array",
+      "description": "Границы знания персонажей. Нужны, чтобы NPC не называли имена/факты без источника.",
+      "items": { "$ref": "#/$defs/knowledge_boundary" },
+      "default": []
+    },
+    "forbidden_context": {
+      "type": "array",
+      "description": "Факты/линии/прошлое, которые НЕ были загружены и не могут всплыть в сцене.",
+      "items": { "$ref": "#/$defs/forbidden_item" },
+      "default": []
+    },
+    "state_snapshot": {
+      "type": "object",
+      "description": "Короткий текущий state сцены, не общий дамп всей игры.",
+      "additionalProperties": true
+    },
+    "output_requirements": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["response_schema", "style_rules", "state_update_mode"],
+      "properties": {
+        "response_schema": {
+          "type": "string",
+          "const": "api_contracts/chatgpt_scene_response.schema.json"
+        },
+        "style_rules": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": []
+        },
+        "state_update_mode": {
+          "type": "string",
+          "enum": ["propose_patch_only", "no_direct_write"]
+        }
+      }
+    },
+    "diagnostics": {
+      "type": "object",
+      "description": "Служебная диагностика сборщика. Не использовать как сюжетный контекст.",
+      "additionalProperties": true
+    }
+  },
+  "$defs": {
+    "loaded_character": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["character_id", "display_name", "load_reason", "source_files", "content_blocks"],
+      "properties": {
+        "character_id": { "type": "string", "minLength": 1 },
+        "display_name": { "type": "string", "minLength": 1 },
+        "load_reason": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "pov",
+              "physically_present",
+              "speaking",
+              "directly_addressed",
+              "mentioned_with_relevance",
+              "scene_goal_requires",
+              "relationship_pair_requires",
+              "calendar_requires"
+            ]
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "source_files": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["main", "character", "knowledge", "memory"],
+          "properties": {
+            "main": { "type": "string", "pattern": "^characters/[^/]+/main\\.yaml$" },
+            "character": { "type": "string", "pattern": "^characters/[^/]+/character\\.yaml$" },
+            "knowledge": { "type": "string", "pattern": "^characters/[^/]+/knowledge\\.yaml$" },
+            "memory": { "type": "string", "pattern": "^state/character_memory/[^/]+\\.json$" },
+            "past": {
+              "type": ["string", "null"],
+              "pattern": "^characters/[^/]+/past\\.yaml$"
+            }
+          }
+        },
+        "past_load_reason": {
+          "type": ["string", "null"],
+          "description": "Если past загружен, здесь должен быть конкретный триггер: флэшбек, разговор о прошлом, scene_goal и т.д."
+        },
+        "content_blocks": {
+          "type": "array",
+          "description": "Содержимое полных карточек. Не заменять краткой выжимкой поведения.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["source_file", "block_type", "visibility", "content"],
+            "properties": {
+              "source_file": { "type": "string" },
+              "block_type": {
+                "type": "string",
+                "enum": ["main", "character", "knowledge", "memory", "past"]
+              },
+              "visibility": {
+                "type": "string",
+                "enum": ["normal", "conditional", "hidden_loaded_by_trigger"]
+              },
+              "content": {
+                "type": ["string", "object", "array"],
+                "description": "Текст или распарсенный YAML/JSON блок."
+              }
+            }
+          },
+          "minItems": 3
+        }
+      }
+    },
+    "loaded_relationship_pair": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["pair_id", "source_file", "load_reason", "content"],
+      "properties": {
+        "pair_id": { "type": "string", "pattern": "^[a-z0-9_]+__[a-z0-9_]+$" },
+        "source_file": { "type": "string", "pattern": "^state/relationship_pairs/[a-z0-9_]+__[a-z0-9_]+\\.json$" },
+        "load_reason": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": ["both_present", "direct_dialogue", "scene_goal_requires", "recent_change", "memory_reference"]
+          },
+          "minItems": 1
+        },
+        "content": { "type": ["object", "string"] }
+      }
+    },
+    "knowledge_boundary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["character_id", "known", "unknown", "must_not_assume"],
+      "properties": {
+        "character_id": { "type": "string" },
+        "known": { "type": "array", "items": { "type": "string" } },
+        "unknown": { "type": "array", "items": { "type": "string" } },
+        "must_not_assume": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "forbidden_item": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "reason"],
+      "properties": {
+        "id": { "type": "string" },
+        "reason": { "type": "string" },
+        "applies_to": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": []
+        }
+      }
+    }
+  }
+}
