@@ -14,7 +14,8 @@
     "alex": "state/character_memory/alex.json",
     "jun": "state/character_memory/jun.json",
     "irey": "state/character_memory/irey.json",
-    "emma": "state/character_memory/emma.json"
+    "emma": "state/character_memory/emma.json",
+    "kai": "state/character_memory/kai.json"
   },
   "legacy_mapping": {
     "status": "archived_reference_only",

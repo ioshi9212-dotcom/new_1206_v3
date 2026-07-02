@@ -39,7 +39,7 @@
     "run_rule": "turn_counter % 10 == 0",
     "purpose": "Review recent chat/scene history and write important missed facts into state.",
     "allowed_actions": [
-      "add missed facts to character_knowledge",
+      "add missed facts to character_memory",
       "add missed facts to relationship_pairs",
       "add missed visible item changes",
       "add missed agreements, promises, refusals or threats",
