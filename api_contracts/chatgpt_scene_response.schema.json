@@ -1,0 +1,238 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://1206.local/api_contracts/chatgpt_scene_response.schema.json",
+  "title": "1206 ChatGPT Scene Response",
+  "description": "Формат ответа ChatGPT после получения scene_contract. Ответ не должен напрямую менять state: только предлагает patch, который потом проверяет API.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "response_version",
+    "scene",
+    "player_options",
+    "proposed_updates",
+    "safety_checks"
+  ],
+  "properties": {
+    "response_version": {
+      "type": "string",
+      "const": "1206.chatgpt_scene_response.v1"
+    },
+    "scene": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["body", "footer"],
+      "properties": {
+        "body": {
+          "type": "string",
+          "description": "Основной текст сцены. Пишется в третьем лице ограниченного POV. Не делает важный выбор за POV."
+        },
+        "footer": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["state", "relationships"],
+          "properties": {
+            "state": {
+              "type": "array",
+              "description": "Короткие строки состояния только по текущей сцене.",
+              "items": { "type": "string" },
+              "maxItems": 8
+            },
+            "relationships": {
+              "type": "array",
+              "description": "Только изменения/важные состояния отношений для присутствующих или напрямую затронутых персонажей.",
+              "items": { "type": "string" },
+              "maxItems": 8
+            }
+          }
+        }
+      }
+    },
+    "player_options": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["actions", "dialogue", "thoughts"],
+      "properties": {
+        "actions": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/player_option" },
+          "maxItems": 3
+        },
+        "dialogue": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/player_option" },
+          "maxItems": 3
+        },
+        "thoughts": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/player_option" },
+          "maxItems": 3
+        }
+      }
+    },
+    "proposed_updates": {
+      "type": "object",
+      "description": "Предложения на обновление state. API должен проверить и применить через apply_turn_result, а не принимать слепо.",
+      "additionalProperties": false,
+      "required": ["scene_state_patch", "character_memory_patches", "relationship_patches"],
+      "properties": {
+        "scene_state_patch": {
+          "$ref": "#/$defs/scene_state_patch"
+        },
+        "character_memory_patches": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/character_memory_patch" },
+          "default": []
+        },
+        "relationship_patches": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/relationship_patch" },
+          "default": []
+        },
+        "new_session_npcs": {
+          "type": "array",
+          "description": "Только если новый NPC стал значимым: получил имя, роль, повторяемость или важное свидетельство.",
+          "items": { "$ref": "#/$defs/session_npc_patch" },
+          "default": []
+        }
+      }
+    },
+    "safety_checks": {
+      "type": "object",
+      "description": "Самопроверка ответа перед применением. Это не сюжетный текст.",
+      "additionalProperties": false,
+      "required": [
+        "used_only_loaded_characters",
+        "respected_knowledge_boundaries",
+        "no_hidden_past_without_trigger",
+        "no_unjustified_character_arrival",
+        "no_major_pov_choice_for_player"
+      ],
+      "properties": {
+        "used_only_loaded_characters": { "type": "boolean" },
+        "respected_knowledge_boundaries": { "type": "boolean" },
+        "no_hidden_past_without_trigger": { "type": "boolean" },
+        "no_unjustified_character_arrival": { "type": "boolean" },
+        "no_major_pov_choice_for_player": { "type": "boolean" },
+        "notes": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "diagnostics": {
+      "type": "object",
+      "description": "Опционально для отладки API. Не показывать игроку как часть сцены.",
+      "additionalProperties": true
+    }
+  },
+  "$defs": {
+    "player_option": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "text"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "text": { "type": "string", "minLength": 1 },
+        "tone": { "type": "string" },
+        "risk": {
+          "type": "string",
+          "enum": ["low", "medium", "high", "unknown"],
+          "default": "unknown"
+        }
+      }
+    },
+    "scene_state_patch": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "location_change": {
+          "type": ["object", "null"],
+          "additionalProperties": false,
+          "properties": {
+            "from": { "type": "string" },
+            "to": { "type": "string" },
+            "reason": { "type": "string" }
+          }
+        },
+        "time_passed": {
+          "type": ["object", "null"],
+          "additionalProperties": false,
+          "properties": {
+            "amount": { "type": "string" },
+            "reason": { "type": "string" }
+          }
+        },
+        "active_character_changes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["character_id", "change", "reason"],
+            "properties": {
+              "character_id": { "type": "string" },
+              "change": { "type": "string", "enum": ["enter", "leave", "stay", "becomes_relevant", "no_change"] },
+              "reason": { "type": "string" }
+            }
+          },
+          "default": []
+        },
+        "scene_flags": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["flag", "value", "reason"],
+            "properties": {
+              "flag": { "type": "string" },
+              "value": { "type": ["string", "number", "boolean", "null"] },
+              "reason": { "type": "string" }
+            }
+          },
+          "default": []
+        }
+      }
+    },
+    "character_memory_patch": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["character_id", "importance", "entry", "reason"],
+      "properties": {
+        "character_id": { "type": "string" },
+        "importance": {
+          "type": "string",
+          "enum": ["low", "medium", "high", "protected"]
+        },
+        "entry": {
+          "type": "string",
+          "description": "Что персонаж теперь знает/запомнил/изменил. Не писать скрытое знание, если персонаж его не получил в сцене."
+        },
+        "reason": { "type": "string" },
+        "source_in_scene": { "type": "string" }
+      }
+    },
+    "relationship_patch": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["pair_id", "change_type", "entry", "reason"],
+      "properties": {
+        "pair_id": { "type": "string", "pattern": "^[a-z0-9_]+__[a-z0-9_]+$" },
+        "change_type": {
+          "type": "string",
+          "enum": ["trust", "tension", "fear", "respect", "distance", "attachment", "conflict", "knowledge", "boundary", "other"]
+        },
+        "entry": { "type": "string" },
+        "reason": { "type": "string" },
+        "source_in_scene": { "type": "string" }
+      }
+    },
+    "session_npc_patch": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["npc_id", "display_name", "reason_to_save"],
+      "properties": {
+        "npc_id": { "type": "string" },
+        "display_name": { "type": "string" },
+        "role": { "type": "string" },
+        "reason_to_save": { "type": "string" },
+        "known_by": { "type": "array", "items": { "type": "string" }, "default": [] }
+      }
+    }
+  }
+}

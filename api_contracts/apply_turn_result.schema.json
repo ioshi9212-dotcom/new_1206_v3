@@ -1,0 +1,138 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://1206.local/api_contracts/apply_turn_result.schema.json",
+  "title": "1206 Apply Turn Result",
+  "description": "Контракт результата после проверки ответа ChatGPT и применения разрешённых патчей. API не должен применять предложенные изменения без валидации источника, знания и границ сцены.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["result_version", "session_id", "turn_id", "status", "applied", "rejected", "next_builder_hints"],
+  "properties": {
+    "result_version": {
+      "type": "string",
+      "const": "1206.apply_turn_result.v1"
+    },
+    "session_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "turn_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "status": {
+      "type": "string",
+      "enum": ["applied", "partially_applied", "rejected", "needs_repair"]
+    },
+    "applied": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["scene_state", "character_memory", "relationship_pairs", "session_npcs"],
+      "properties": {
+        "scene_state": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/applied_patch" },
+          "default": []
+        },
+        "character_memory": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/applied_patch" },
+          "default": []
+        },
+        "relationship_pairs": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/applied_patch" },
+          "default": []
+        },
+        "session_npcs": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/applied_patch" },
+          "default": []
+        }
+      }
+    },
+    "rejected": {
+      "type": "array",
+      "description": "Патчи, которые ChatGPT предложил, но API не применил.",
+      "items": { "$ref": "#/$defs/rejected_patch" },
+      "default": []
+    },
+    "next_builder_hints": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["active_character_ids", "location_id", "must_load_pairs", "must_not_load"],
+      "properties": {
+        "active_character_ids": {
+          "type": "array",
+          "items": { "type": "string" },
+          "uniqueItems": true,
+          "default": []
+        },
+        "location_id": {
+          "type": ["string", "null"]
+        },
+        "must_load_pairs": {
+          "type": "array",
+          "items": { "type": "string", "pattern": "^[a-z0-9_]+__[a-z0-9_]+$" },
+          "uniqueItems": true,
+          "default": []
+        },
+        "must_not_load": {
+          "type": "array",
+          "description": "Факты/персонажи/прошлое, которые не должны попасть в следующий scene_contract без нового триггера.",
+          "items": { "type": "string" },
+          "default": []
+        },
+        "repair_required": {
+          "type": "boolean",
+          "default": false
+        },
+        "repair_reason": {
+          "type": ["string", "null"]
+        }
+      }
+    },
+    "audit": {
+      "type": "object",
+      "description": "Отладочная проверка источников. Не показывать игроку.",
+      "additionalProperties": false,
+      "properties": {
+        "validated_json_schema": { "type": "boolean" },
+        "checked_character_knowledge_boundaries": { "type": "boolean" },
+        "checked_hidden_past_triggers": { "type": "boolean" },
+        "checked_no_unjustified_akira_injection": { "type": "boolean" },
+        "notes": { "type": "array", "items": { "type": "string" } }
+      }
+    }
+  },
+  "$defs": {
+    "applied_patch": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["target_file", "operation", "summary", "source_turn_id"],
+      "properties": {
+        "target_file": { "type": "string" },
+        "operation": {
+          "type": "string",
+          "enum": ["append", "replace_field", "set_flag", "remove_flag", "create", "no_change"]
+        },
+        "summary": { "type": "string" },
+        "source_turn_id": { "type": "string" },
+        "protected": { "type": "boolean", "default": false }
+      }
+    },
+    "rejected_patch": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["target", "reason", "severity"],
+      "properties": {
+        "target": { "type": "string" },
+        "reason": { "type": "string" },
+        "severity": {
+          "type": "string",
+          "enum": ["info", "warning", "error", "critical"]
+        },
+        "repair_hint": { "type": "string" }
+      }
+    }
+  }
+}
