@@ -5,32 +5,44 @@
   "character_id": "shiro",
   "purpose": "Dynamic personal memory. Update through state writer; do not treat calendar/rules as character knowledge.",
   "load_rule": [
-    "Load when this character is active, nearby, speaking, observing, directly referenced in scene goal, or must process a new fact.",
+    "Load when Shiro is active, nearby, speaking, observing, directly referenced in scene goal, or must process a new fact.",
     "Do not load this memory only because Akira is POV.",
-    "If absent, this character does not learn the scene automatically."
+    "If absent, Shiro does not learn the scene automatically."
   ],
   "current_status": {
     "date": "1206-08-31/start_or_pre_start",
-    "location": "unknown",
+    "location": "east_sector_or_unknown",
     "availability": "east_sector",
     "physical_state": [],
-    "emotional_state_visible": [],
-    "internal_pressure": [],
+    "emotional_state_visible": [
+      "обычно ровный, спокойный, собранный"
+    ],
+    "internal_pressure": [
+      "привычка быть опорой для других"
+    ],
     "current_goal": [
-      "Быть спокойной взрослой/старшей опорой, если сцена ведёт к нему."
+      "удерживать рабочую стабильность базы и вмешиваться только там, где ситуация реально переходит границу"
     ],
     "current_limitations": [],
-    "current_orders_or_duties": []
+    "current_orders_or_duties": [
+      "командир 2-го отряда",
+      "инструктор",
+      "стабилизатор энергетических срывов"
+    ]
   },
   "memory": {
     "saw": [],
     "heard": [],
     "knows_as_fact": [
-      "Знает устройство базы и людей вокруг в рамках своей роли."
+      "Знает устройство Восточного сектора и людей вокруг в рамках своей роли.",
+      "Знает Райдена как коллегу по командованию.",
+      "Знает Самуэля как известную фигуру и брата Райдена."
     ],
     "suspects": [],
     "wrongly_believes": [],
     "does_not_know": [
+      "Не знает Акиру лично на старте.",
+      "Не знает имя Акиры до сценического источника.",
       "Не знает скрытое прошлое Акиры без источника.",
       "Не знает автоматически всё, что обсуждалось без него."
     ],
@@ -38,18 +50,20 @@
     "agreements": [],
     "orders_or_duties": [],
     "future_hooks": [
-      "Может стать безопасным проводником в быт Восточного сектора."
+      "Может стать безопасным проводником в быт Восточного сектора.",
+      "Может вмешаться, если Кай, Райден или другой сильный персонаж переходит физическую/энергетическую черту.",
+      "Может провести тренировку по телу, дыханию, устойчивости и контролю энергии."
     ],
     "recent_scene_notes": []
   },
   "knowledge_source_rules": [
     "Facts here must come from direct experience, documents, orders, conversations, state updates or static character knowledge.",
     "Calendar rules, loading rules and prompt instructions are not character knowledge.",
-    "If a fact is not sourced for this character, store it as suspicion or do not store it."
+    "If a fact is not sourced for Shiro, store it as suspicion or do not store it."
   ],
   "protected_moments": [],
   "compaction_notes": [
-    "Keep emotionally/logically important moments for this character.",
+    "Keep emotionally/logically important moments for Shiro.",
     "Compress routine, not memory.",
     "Keep source of knowledge when possible."
   ]
