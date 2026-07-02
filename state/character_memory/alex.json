@@ -5,51 +5,77 @@
   "character_id": "alex",
   "purpose": "Dynamic personal memory. Update through state writer; do not treat calendar/rules as character knowledge.",
   "load_rule": [
-    "Load when this character is active, nearby, speaking, observing, directly referenced in scene goal, or must process a new fact.",
+    "Load when Alex is active, nearby, speaking, observing, directly referenced in scene goal, or must process a new fact.",
     "Do not load this memory only because Akira is POV.",
-    "If absent, this character does not learn the scene automatically."
+    "If absent, Alex does not learn the scene automatically."
   ],
   "current_status": {
     "date": "1206-08-31/start_or_pre_start",
-    "location": "unknown",
+    "location": "east_sector_or_unknown",
     "availability": "east_sector",
     "physical_state": [],
-    "emotional_state_visible": [],
-    "internal_pressure": [],
-    "current_goal": [
-      "Держать дистанцию, реагировать сухо, но не быть злодейкой без причины."
+    "emotional_state_visible": [
+      "ровная",
+      "сдержанная",
+      "сухая"
     ],
-    "current_limitations": [],
+    "internal_pressure": [
+      "держит дистанцию",
+      "боится быть заменённой/ненужной, если связь с Мики нарушается"
+    ],
+    "current_goal": [
+      "держать контроль",
+      "не просить поддержки",
+      "оставаться рядом с Мики, не превращая это в просьбу"
+    ],
+    "current_limitations": [
+      "семейная тема легко выбивает контроль"
+    ],
     "current_orders_or_duties": []
   },
   "memory": {
     "saw": [],
     "heard": [],
     "knows_as_fact": [
-      "Знает Мики и часть быта базы."
+      "Знает Мики как близкого человека и лучшую подругу.",
+      "Знает 7-й отряд и видимую жизнь Восточного сектора.",
+      "Знает Райдена как командира 7-го отряда.",
+      "Знает собственную семейную боль, но трактует её через обиду."
     ],
     "suspects": [],
-    "wrongly_believes": [],
+    "wrongly_believes": [
+      "Может считать, что родители не пытались её удержать.",
+      "Может принять заботу за жалость."
+    ],
     "does_not_know": [
       "Не знает скрытое прошлое Акиры без источника.",
-      "Не знает автоматом причины поведения Акиры."
+      "Не знает автоматом причины поведения Акиры.",
+      "Не знает прошлую связь Акиры и Райдена.",
+      "Не знает механизм потери памяти Райдена.",
+      "Не знает hidden lore Самуэля/лаборатории/Эхо."
     ],
-    "is_hiding": [],
+    "is_hiding": [
+      "Насколько сильно боится быть заменённой.",
+      "Насколько болезненна тема родителей."
+    ],
     "agreements": [],
     "orders_or_duties": [],
     "future_hooks": [
-      "Может замечать слабые места и говорить неприятные, но честные вещи."
+      "Может тихо ревновать Мики к Акире на раннем этапе.",
+      "Может сорваться давлением, если семейную тему задеть слишком резко.",
+      "Разговор с Акирой о родителях может стать protected moment.",
+      "После честного разговора может решиться поехать к родителям."
     ],
     "recent_scene_notes": []
   },
   "knowledge_source_rules": [
     "Facts here must come from direct experience, documents, orders, conversations, state updates or static character knowledge.",
     "Calendar rules, loading rules and prompt instructions are not character knowledge.",
-    "If a fact is not sourced for this character, store it as suspicion or do not store it."
+    "If a fact is not sourced for Alex, store it as suspicion or do not store it."
   ],
   "protected_moments": [],
   "compaction_notes": [
-    "Keep emotionally/logically important moments for this character.",
+    "Keep emotionally/logically important moments for Alex, especially Miki, parents, replacement fear, pressure loss of control.",
     "Compress routine, not memory.",
     "Keep source of knowledge when possible."
   ]
