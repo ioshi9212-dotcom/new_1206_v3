@@ -16,7 +16,7 @@ from typing import Any
 from fastapi import FastAPI
 
 APP_NAME = "akira-1206-v3"
-APP_VERSION = "0.3.181-v3-standalone-full-cards"
+APP_VERSION = "0.3.182-v3-past-trigger-guard"
 BASE_URL = os.getenv("PUBLIC_BASE_URL") or os.getenv("RAILWAY_PUBLIC_DOMAIN") or "http://localhost:8000"
 if BASE_URL and not BASE_URL.startswith(("http://", "https://")):
     BASE_URL = "https://" + BASE_URL

@@ -64,10 +64,26 @@ CHARACTER_FIELDS = (
     "pending_character_ids", "scene_goal_character_ids", "relationship_focus_character_ids",
 )
 
+# Strong hidden-past triggers only.
+# Do not include common scene/inventory words like "записка", "документы", "Джун",
+# "мать" or "отец" here: they caused past.yaml to load during ordinary setup.
 PAST_TRIGGER_WORDS = (
-    "прошл", "вспом", "памят", "флэшбек", "флешбек", "академ", "1198", "1170",
-    "беремен", "ребен", "ребён", "потер", "плен", "самуэль", "samuel", "браслет",
-    "джун", "дом джуна", "записка", "детств", "мать", "отец", "пожар",
+    "прошл", "вспом", "памят", "флэшбек", "флешбек",
+    "академ", "1198", "1170",
+    "беремен", "ребен", "ребён", "плен", "самуэль", "samuel", "браслет",
+    "пожар", "срыв", "эксперимент", "лаборатор",
+)
+
+PAST_TRIGGER_PHRASES = (
+    "след от кольца", "старое кольцо", "шрам на животе",
+    "фамилия картер", "удостоверение картер", "бордовая форма",
+    "дом джуна был подготовлен", "барьер джуна",
+    "потеря ребенка", "потеря ребёнка", "прошлая связь",
+)
+
+PAST_FALSE_POSITIVE_WORDS = (
+    "записка", "записку", "записки",
+    "документы", "документ", "блокнот",
 )
 
 ENERGY_WORDS = (
@@ -242,11 +258,22 @@ def _past_triggered(current: dict[str, Any], cid: str) -> tuple[bool, list[str]]
         return True, ["explicit_past_trigger_character_ids"]
     if bool(current.get("load_past") or current.get("past_triggered")):
         return True, ["current_state_load_past"]
+
     blob = "\n".join(str(current.get(key) or "") for key in ["scene_goal", "scene_goal_text", "last_player_input", "current_scene_id", "scene_id"])
     low = blob.lower().replace("ё", "е")
+
+    # Common inventory/setup words are not enough to load hidden past.
+    # Example: "взять записку/документы/блокнот" should keep Akira.past unloaded.
+    phrase_hits = [phrase for phrase in PAST_TRIGGER_PHRASES if phrase in low]
+    if phrase_hits:
+        return True, [f"phrase:{hit}" for hit in phrase_hits[:5]]
+
     hits = [word for word in PAST_TRIGGER_WORDS if word in low]
+    false_hits = [word for word in PAST_FALSE_POSITIVE_WORDS if word in low]
     if hits:
         return True, [f"keyword:{hit}" for hit in hits[:5]]
+    if false_hits:
+        return False, [f"ignored_setup_word:{hit}" for hit in false_hits[:3]]
     return False, []
 
 
