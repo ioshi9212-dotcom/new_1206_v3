@@ -1,0 +1,42 @@
+{
+  "id": "prompt_assembly_rules_1206",
+  "version": "v1",
+  "purpose": "Define which prompt/output rule files must be included when API sends a scene_contract to ChatGPT.",
+  "required_contract": "api_contracts/scene_contract.schema.json",
+  "required_response_schema": "api_contracts/chatgpt_scene_response.schema.json",
+  "input_mode": "scene_contract_only",
+  "core_rules": [
+    "ChatGPT receives already assembled scene_contract from API/builder.",
+    "ChatGPT must not scan the whole repository or invent missing context.",
+    "Character behavior must come from loaded full character cards and state/character_memory only.",
+    "Relationship dynamics must come only from loaded relevant relationship_pairs.",
+    "Past files are usable only when loaded by a trigger.",
+    "Forbidden context has priority over drama and prose quality.",
+    "All state changes are proposed_updates only; API applies or rejects them."
+  ],
+  "prompt_rule_files": [
+    "gpt/scene_output/chatgpt_output_contract_rules_1206_ru.md",
+    "gpt/scene_output/scene_writing_format_1206_ru.md",
+    "gpt/scene_output/scene_footer_rules_1206_ru.md",
+    "gpt/scene_output/scene_quality_control_1206_ru.md",
+    "gpt/scene_output/character_autonomy_scene_rules_1206_ru.md",
+    "gpt/scene_output/pov_context_loading_rules_1206.json"
+  ],
+  "response_must_include": [
+    "scene.body",
+    "scene.footer",
+    "player_options.actions",
+    "player_options.dialogue",
+    "player_options.thoughts",
+    "proposed_updates",
+    "safety_checks"
+  ],
+  "forbidden_output_behaviors": [
+    "Do not claim files were updated by ChatGPT.",
+    "Do not reveal hidden past without trigger.",
+    "Do not add absent characters as active speakers.",
+    "Do not make major POV choices for the player.",
+    "Do not output all relationship pairs or all character states.",
+    "Do not use missing context as if it were loaded."
+  ]
+}

@@ -199,7 +199,11 @@
     "style_rules": [
       "third person limited POV in scene body",
       "footer in first person current POV",
-      "propose state updates only; do not write state directly"
+      "propose state updates only; do not write state directly",
+      "use gpt/scene_output/chatgpt_output_contract_rules_1206_ru.md",
+      "validate response shape against api_contracts/chatgpt_scene_response.schema.json",
+      "proposed_updates only; API applies through apply_turn_result",
+      "do not use forbidden_context or unloaded past"
     ],
     "state_update_mode": "propose_patch_only"
   },
