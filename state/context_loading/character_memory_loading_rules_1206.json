@@ -58,8 +58,7 @@
       "state/protected_moment directly triggers past-related reaction"
     ],
     "do_not_use": [
-      "short character summaries as behavior source",
-      "old state/character_knowledge path"
+      "short character summaries as behavior source"
     ],
     "reason": "Short summaries flatten personality and make characters behave unlike their full cards."
   },
