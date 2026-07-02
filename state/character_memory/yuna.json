@@ -1,60 +1,80 @@
 {
-  "id": "character_memory_yuna",
-  "version": "v1",
-  "file_type": "character_dynamic_memory",
+  "schema": "character_memory_state_v1_ru",
   "character_id": "yuna",
-  "purpose": "Dynamic personal memory. Update through state writer; do not treat calendar/rules as character knowledge.",
-  "load_rule": [
-    "Load when this character is active, nearby, speaking, observing, directly referenced in scene goal, or must process a new fact.",
-    "Do not load this memory only because Akira is POV.",
-    "If absent, this character does not learn the scene automatically."
+  "display_name": "Юна Крейн",
+  "status": "active",
+  "purpose": "Динамическая память Юны: что она видела, слышала, узнала, скрывает или ошибочно считает в текущей линии 1206.",
+  "rules": [
+    "Постоянные знания Юны находятся в characters/yuna/knowledge.yaml.",
+    "Прошлое Юны с Самуэлем находится в characters/yuna/past.yaml и не является публичным знанием.",
+    "Если Юна узнаёт, что Акира жива, записать источник: сцена, сообщение, отчёт, документ или личная встреча.",
+    "Не знает не значит глупая: Юна может предполагать, проверять, скрывать и молчать, но догадка не становится фактом без источника."
   ],
-  "current_status": {
-    "date": "1206-08-31/start_or_pre_start",
-    "location": "unknown",
-    "availability": "not_on_base_until_1206-09-02",
-    "physical_state": [],
-    "emotional_state_visible": [],
-    "internal_pressure": [],
-    "current_goal": [
-      "Не появляться до 2 сентября; при появлении действовать профессионально и осторожно."
+  "seen": [],
+  "heard": [],
+  "knows_as_fact": [
+    {
+      "fact": "Юна работает медицинским специалистом Восточного сектора.",
+      "source": "baseline"
+    },
+    {
+      "fact": "Юна знает своё прошлое при закрытой медицинской линии Самуэля.",
+      "source": "baseline_hidden"
+    },
+    {
+      "fact": "Юна знает общие медицинские сведения о Райдене как о человеке базы: шрамы, рейды, нагрузки и риски.",
+      "source": "baseline"
+    },
+    {
+      "fact": "Юна знает общим фактом, что Акира и Райден были вместе в прошлом.",
+      "source": "baseline_hidden"
+    },
+    {
+      "fact": "Юна знает общим фактом, что Рэй — сводный брат Акиры.",
+      "source": "baseline_hidden"
+    }
+  ],
+  "assumes": [],
+  "mistakenly_believes": [
+    {
+      "belief": "Юна считает Акиру погибшей или исчезнувшей, пока не увидит её живой или не получит источник.",
+      "status": "active_at_start"
+    }
+  ],
+  "does_not_know": [
+    "не знает на старте, что Акира жива",
+    "не знает, что Акиру два года скрывал Джун",
+    "не знает текущий объём памяти Акиры",
+    "не знает точную причину блокировки памяти, эмоций и потока",
+    "не знает привычки, вкусы и бытовую жизнь Акиры",
+    "не знает подробности Хару, друзей Акиры и их личной истории",
+    "не знает, что Райден гибрид",
+    "не знает связь Акиры с Эхо, Наблюдателем или hidden lore"
+  ],
+  "hides_from": {
+    "akira": [
+      "прошлое при линии Самуэля",
+      "что знает Акиру из прошлого периода",
+      "общий факт связи Акиры и Райдена",
+      "общий факт семейной связи Рэя и Акиры",
+      "личную вину"
     ],
-    "current_limitations": [],
-    "current_orders_or_duties": []
+    "eastern_base": [
+      "прошлое с Самуэлем",
+      "закрытые медицинские сведения"
+    ],
+    "ray": [
+      "свою связь с закрытой медицинской линией Самуэля, пока это не раскрыто сценой"
+    ]
   },
-  "memory": {
-    "saw": [],
-    "heard": [],
-    "knows_as_fact": [
-      "Имеет медицинскую компетенцию и доступ к документам по работе."
-    ],
-    "suspects": [],
-    "wrongly_believes": [],
-    "does_not_know": [
-      "До 2 сентября не знает, что Акира жива.",
-      "Не знает заранее, что Акира её не помнит.",
-      "Не знает сцену 31 августа/1 сентября автоматически, если ей не сообщили."
-    ],
-    "is_hiding": [
-      "Из-за связи с Самуэлем боится, что её раскроют.",
-      "Старается делать вид, что видит Акиру впервые, насколько это возможно в её характере."
-    ],
-    "agreements": [],
-    "orders_or_duties": [],
-    "future_hooks": [
-      "Проверка документов и состояния Акиры может стать опасной точкой для Юны."
-    ],
-    "recent_scene_notes": []
-  },
-  "knowledge_source_rules": [
-    "Facts here must come from direct experience, documents, orders, conversations, state updates or static character knowledge.",
-    "Calendar rules, loading rules and prompt instructions are not character knowledge.",
-    "If a fact is not sourced for this character, store it as suspicion or do not store it."
+  "agreements": [],
+  "open_threads": [
+    {
+      "id": "first_reappearance_with_akira",
+      "summary": "Если Юна впервые увидит живую Акиру, это должно стать внутренним сбоем, но не немедленным признанием.",
+      "status": "pending"
+    }
   ],
   "protected_moments": [],
-  "compaction_notes": [
-    "Keep emotionally/logically important moments for this character.",
-    "Compress routine, not memory.",
-    "Keep source of knowledge when possible."
-  ]
+  "last_scene_notes": []
 }

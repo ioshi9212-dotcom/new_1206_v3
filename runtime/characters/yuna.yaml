@@ -1,0 +1,11 @@
+id: "yuna"
+name: "Юна Крейн"
+role: "медицинский специалист Восточного сектора"
+load_mode: "conditional"
+summary: "Тихий робкий медик с мягким голосом и скрытой виной из-за закрытой линии Самуэля. Не знает на старте, что Акира жива."
+files:
+  main: "characters/yuna/main.yaml"
+  character: "characters/yuna/character.yaml"
+  knowledge: "characters/yuna/knowledge.yaml"
+  past: "characters/yuna/past.yaml"
+  memory: "state/character_memory/yuna.json"
