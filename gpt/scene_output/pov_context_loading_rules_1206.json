@@ -1,9 +1,9 @@
 {
   "id": "pov_context_loading_rules_1206",
-  "version": "v1",
+  "version": "v3-full-character-cards-only",
   "purpose": "Control which character cards, memories and relationship pairs are loaded depending on current POV and scene participants.",
   "default_pov": "akira",
-  "core_rule": "Load cards and state for the active POV character and active scene participants only.",
+  "core_rule": "Load full character cards and state for the active POV character and active scene participants only.",
   "pov_body_style": {
     "scene_body": "Third person limited POV.",
     "footer": "First person current POV.",
@@ -14,16 +14,17 @@
     ]
   },
   "load_current_pov": [
-    "Always load current POV character card.",
-    "Always load current POV character memory/state.",
-    "Load current POV relevant active relationship pairs only."
+    "Always load current POV full character cards: main.yaml, character.yaml, knowledge.yaml.",
+    "Always load current POV character_memory/state.",
+    "Load current POV relevant active relationship pairs only.",
+    "Load current POV past.yaml only if triggered."
   ],
   "akira_not_always_loaded": {
     "rule": "Akira is not loaded automatically when POV is not Akira and Akira is not present, mentioned, remembered or relevant to the scene goal.",
     "examples": [
-      "POV Haru alone in the training hall: load Haru, location, current calendar slice, relevant NPC/social rules. Do not load Akira card/state.",
-      "POV Haru talking to Raiden about patrols without Akira: load Haru, Raiden, and raiden__haru relationship pair if needed. Do not load Akira.",
-      "POV Haru directly talking to Akira: load Haru, Akira, and akira__haru relationship pair."
+      "POV Haru alone in the training hall: load Haru full cards, Haru memory, location, current calendar slice, relevant NPC/social rules. Do not load Akira card/state.",
+      "POV Haru talking to Raiden about patrols without Akira: load Haru full cards, Raiden full cards, their memories, and raiden__haru relationship pair if needed. Do not load Akira.",
+      "POV Haru directly talking to Akira: load Haru full cards, Akira full cards, their memories, and akira__haru relationship pair."
     ]
   },
   "load_akira_when": [
@@ -58,7 +59,20 @@
   },
   "characters_folder_rule": [
     "Any character from characters/ is not background NPC.",
-    "If a characters/ character appears, load their card, memory and relevant relationships.",
-    "Do not use a characters/ character as random crowd filler."
-  ]
+    "If a characters/ character appears, load their full cards from characters/<id>/ and their character_memory.",
+    "Do not use a characters/ character as random crowd filler.",
+    "Do not replace full character cards with short one-file summaries."
+  ],
+  "character_card_source_rule": {
+    "canonical_source": "characters/<id>/",
+    "load_for_relevant_character": [
+      "main.yaml",
+      "character.yaml",
+      "knowledge.yaml",
+      "state/character_memory/<id>.json"
+    ],
+    "past_yaml": "load only when triggered by scene, memory, flashback, current goal, or valid spoken source",
+    "reason": "Short summaries flatten character voice and behavior; use full cards instead.",
+    "summary_policy": "Do not create or rely on separate short summary files as character behavior source."
+  }
 }

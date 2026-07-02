@@ -1,13 +1,13 @@
 {
-  "id": "character_memory_loading_rules_1206",
-  "version": "v1",
+  "id": "character_card_and_memory_loading_rules_1206",
+  "version": "v3-full-character-cards-only",
   "file_type": "context_loading_rules",
-  "purpose": "Rules for selecting dynamic character memory files for scene_contract.",
+  "purpose": "Rules for selecting full static character cards and dynamic character memory for scene_contract.",
   "always_use_light_index": true,
   "load_full_character_memory_when": [
+    "character is current POV",
     "character is active in current_frame",
-    "character is nearby and can observe/hear the scene",
-    "character is speaking or being directly addressed",
+    "character is present, nearby, speaking, addressed, observing, or able to hear the scene",
     "character is directly referenced by current scene goal",
     "character must receive a state update because they witnessed/learned something",
     "calendar current day explicitly makes this character active"
@@ -16,18 +16,25 @@
     "character is absent and only generally exists in canon",
     "character is a future calendar event not yet active",
     "character is not relevant to scene goal",
-    "only Akira POV is active and this character is not present/referenced"
+    "only Akira POV is active and this character is not present/referenced",
+    "character is only mentioned as background name with no current relevance"
   ],
   "knowledge_safety": [
-    "Loaded memory is internal for characterization, not automatic POV exposition.",
+    "Loaded cards and memory are internal for characterization, not automatic POV exposition.",
     "If a character is not loaded, they do not learn the scene.",
     "Do not use unloaded character memory to drive current NPC behavior.",
-    "Do not use calendar/rules as character knowledge."
+    "Do not use calendar/rules as character knowledge.",
+    "Do not use hidden past as present knowledge unless the character has a valid source."
   ],
   "recommended_scene_contract_slice": {
     "character_id": "id",
-    "current_status": "short",
-    "memory": {
+    "static_cards": {
+      "main": "compact relevant facts only",
+      "character": "voice/behavior/combat/energy relevant now",
+      "knowledge": "only relevant stable knowledge/ignorance",
+      "past": "only if triggered"
+    },
+    "dynamic_memory": {
       "knows_as_fact": "only relevant items",
       "suspects": "only relevant items",
       "does_not_know": "critical ignorance only",
@@ -35,5 +42,33 @@
       "future_hooks": "open hooks relevant now"
     },
     "protected_moments": "only active moments relevant to current scene"
-  }
+  },
+  "character_source_rule": {
+    "canonical_static_character_source": "characters/<id>/",
+    "load_static_cards_when_character_is_relevant": [
+      "characters/<id>/main.yaml",
+      "characters/<id>/character.yaml",
+      "characters/<id>/knowledge.yaml"
+    ],
+    "load_past_yaml_only_when": [
+      "scene directly touches the character past",
+      "flashback or memory trigger is active",
+      "another character speaks about that past with a valid source",
+      "current calendar slice or scene goal explicitly requires past context",
+      "state/protected_moment directly triggers past-related reaction"
+    ],
+    "do_not_use": [
+      "short character summaries as behavior source",
+      "old state/character_knowledge path"
+    ],
+    "reason": "Short summaries flatten personality and make characters behave unlike their full cards."
+  },
+  "scene_contract_character_slice_order": [
+    "main.yaml: identity, role, appearance, short card_hint",
+    "character.yaml: voice, behavior, habits, combat style, energy behavior",
+    "knowledge.yaml: stable knowledge, ignorance and secrets known at scene start",
+    "state/character_memory/<id>.json: dynamic memory from previous scenes",
+    "relationship_pairs/<pair>.json: only relevant pairs",
+    "past.yaml: conditional only, not always loaded"
+  ]
 }
