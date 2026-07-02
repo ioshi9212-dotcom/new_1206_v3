@@ -11,7 +11,6 @@ identity:
   public_name: "Рэй"
   visible_role: "командующий Восточного сектора"
   setting: "1206"
-  hidden_family_role: "сын Джуна; для Акиры семейный/сводный брат, но не биологический родственник"
 
 name_use_rule:
   default_visible_name: "Рэй"

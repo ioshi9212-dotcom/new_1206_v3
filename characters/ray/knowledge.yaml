@@ -158,7 +158,7 @@ question_response_rules:
     - "Не знать биографию заранее."
     - "Спрашивать, изолировать, проверять, сопоставлять слова и действия."
 
-runtime_knowledge:
+dynamic_knowledge:
   enabled: true
   rule: "Новые знания Рэя добавлять только после сцен, документов, разговоров, наблюдений или действий игрока. Использовать state/character_memory/ray.json."
   items: []
