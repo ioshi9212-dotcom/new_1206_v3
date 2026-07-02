@@ -1,0 +1,45 @@
+{
+  "id": "scene_state_patch_rules_1206",
+  "file_type": "scene_state_update_rules",
+  "version": "1.0.0",
+  "status": "active",
+  "purpose": "Как обновлять состояние текущей сцены после ответа ChatGPT.",
+  "allowed_scene_state_updates": [
+    "location change after player/NPC action",
+    "time advancement if scene explicitly passed time",
+    "active_characters add/remove with reason",
+    "npc_presence update if a session NPC appeared or left",
+    "open_hook add/close",
+    "scene_status continue/pause/end"
+  ],
+  "active_character_rules": {
+    "add_only_if": [
+      "character physically enters",
+      "character is contacted by phone/radio/message and becomes active",
+      "character is directly observed/heard",
+      "scene contract included delayed/conditional arrival and condition is met"
+    ],
+    "do_not_add_if": [
+      "character is important in canon but absent",
+      "assistant wants dramatic entrance without setup",
+      "player only thought about them",
+      "they are in relationship_pairs but not in scene"
+    ],
+    "remove_if": [
+      "character leaves",
+      "POV leaves the place and no contact remains",
+      "scene explicitly shifts away",
+      "contact ends"
+    ]
+  },
+  "time_rules": {
+    "small_step": "minutes, if dialogue/action continues naturally",
+    "medium_step": "tens of minutes, if travel/training/meal is summarized",
+    "large_step": "hours/days only if player requested skip or scene contract permits",
+    "forbidden": "do not skip important NPC answer/question without offering choice"
+  },
+  "location_rules": {
+    "update_requires": "clear movement or scene cut",
+    "privacy_change": "changing location changes NPC presence rules and character loading for next turn"
+  }
+}

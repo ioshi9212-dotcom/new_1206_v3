@@ -1,0 +1,57 @@
+{
+  "id": "proposed_updates_validation_1206",
+  "file_type": "proposed_updates_validation_rules",
+  "version": "1.0.0",
+  "status": "active",
+  "purpose": "Правила проверки proposed_updates перед применением.",
+  "required_fields_for_each_update": [
+    "target_type",
+    "target_id",
+    "operation",
+    "value",
+    "scene_evidence",
+    "visibility",
+    "confidence"
+  ],
+  "target_types": {
+    "character_memory": "Обновление динамической памяти конкретного персонажа.",
+    "relationship_pair": "Обновление динамики пары персонажей.",
+    "scene_state": "Текущее состояние сцены: location, active characters, time, open hooks.",
+    "scene_flag": "Флаг, возникший в ходе сцены.",
+    "session_npc": "Временный NPC, если он реально появился и стал важен."
+  },
+  "operations": {
+    "append_fact": "Добавить короткий факт с привязкой к сцене.",
+    "update_fact": "Обновить уже существующий динамический факт без переписывания канона.",
+    "set_flag": "Поставить флаг.",
+    "clear_flag": "Снять флаг, если сцена явно закрыла условие.",
+    "adjust_relation": "Изменить trust/tension/fear/attachment/conflict на небольшой шаг.",
+    "add_open_hook": "Добавить незакрытый крючок сцены.",
+    "close_open_hook": "Закрыть ранее открытый крючок."
+  },
+  "visibility_values": {
+    "surface": "Факт видим/известен персонажу прямо сейчас.",
+    "private": "Внутренняя реакция персонажа, если POV/сцена это обосновывает.",
+    "hidden": "Не применять как активное знание без отдельного trigger/permission.",
+    "meta": "Техническая диагностика; не использовать в сцене."
+  },
+  "validation_checks": [
+    "Есть ли scene_evidence из текущей сцены?",
+    "Не делает ли обновление выбор за POV?",
+    "Не раскрывает ли hidden/past без trigger?",
+    "Имеет ли персонаж сценический источник знания?",
+    "Не переписывает ли обновление постоянную карточку персонажа?",
+    "Не создаёт ли будущую романтику/доверие/вражду без сцены?",
+    "Не добавляет ли отсутствующего персонажа как witnessed/present без причины?",
+    "Не является ли обновление слишком крупным и размытым?"
+  ],
+  "reject_if": [
+    "scene_evidence is missing or vague",
+    "confidence below 0.55 for memory/relationship updates",
+    "target_id does not exist and update is not session_npc",
+    "operation tries to write hidden lore into surface memory",
+    "update is based on assistant narration only, not scene event/player/NPC action",
+    "update contradicts locked canon without explicit correction mode"
+  ],
+  "compress_rule": "Сохранять не длинные пересказы, а короткие атомарные факты: кто, что сделал/узнал/почувствовал, почему это важно."
+}
