@@ -1,57 +1,33 @@
 {
-  "id": "character_memory_akira",
-  "version": "v1",
-  "file_type": "character_dynamic_memory",
+  "schema": "character_memory_state_v1_ru",
   "character_id": "akira",
-  "purpose": "Dynamic personal memory. Update through state writer; do not treat calendar/rules as character knowledge.",
-  "load_rule": [
-    "Load when this character is active, nearby, speaking, observing, directly referenced in scene goal, or must process a new fact.",
-    "Do not load this memory only because Akira is POV.",
-    "If absent, this character does not learn the scene automatically."
+  "display_name": "Акира",
+  "rules": [
+    "Динамическая память/знания Акиры по сыгранным сценам.",
+    "Постоянные стартовые знания лежат в characters/akira/knowledge.yaml.",
+    "Hidden past не становится знанием Акиры без сценического источника.",
+    "Runtime подтягивает этот файл только если Акира является POV, активна, присутствует, упомянута как цель сцены или получает state update."
   ],
-  "current_status": {
-    "date": "1206-08-31/start_or_pre_start",
-    "location": "unknown",
-    "availability": "player_controlled",
-    "physical_state": [],
-    "emotional_state_visible": [],
-    "internal_pressure": [],
-    "current_goal": [
-      "Игрок управляет действиями Акиры; state фиксирует только уже случившееся."
-    ],
-    "current_limitations": [],
-    "current_orders_or_duties": []
-  },
-  "memory": {
-    "saw": [],
-    "heard": [],
-    "knows_as_fact": [
-      "На старте 1206 помнит текущие факты только в пределах активной сцены и своего состояния; любые открытия должны записываться после сцены."
-    ],
-    "suspects": [],
-    "wrongly_believes": [],
-    "does_not_know": [
-      "Не помнит значительную часть прошлого.",
-      "Не знает скрытый лор, если он не раскрыт в сцене.",
-      "Не знает автоматически то, что написано в календаре или правилах."
-    ],
-    "is_hiding": [],
-    "agreements": [],
-    "orders_or_duties": [],
-    "future_hooks": [
-      "Её выборы создают ветку; не подменять действия игрока автосценой."
-    ],
-    "recent_scene_notes": []
-  },
-  "knowledge_source_rules": [
-    "Facts here must come from direct experience, documents, orders, conversations, state updates or static character knowledge.",
-    "Calendar rules, loading rules and prompt instructions are not character knowledge.",
-    "If a fact is not sourced for this character, store it as suspicion or do not store it."
+  "seen": [],
+  "heard": [],
+  "knows_as_fact": [],
+  "assumes": [
+    "может считать, что Джун вероятно её отец из-за документов/фамилии Картер, но не знает полной правды"
   ],
+  "mistaken_beliefs": [],
+  "does_not_know": [
+    "не знает, что дом Джуна был куплен/подготовлен специально для её скрытия",
+    "не знает истинную причину последних двух лет в доме Джуна",
+    "не знает устройство Восточного сектора до сценического объяснения/наблюдения",
+    "не знает свою истинную природу и прошлую связь с Райденом"
+  ],
+  "hides_from": {},
+  "agreements": [],
   "protected_moments": [],
-  "compaction_notes": [
-    "Keep emotionally/logically important moments for this character.",
-    "Compress routine, not memory.",
-    "Keep source of knowledge when possible."
-  ]
+  "future_hooks": [],
+  "inventory_notes": [
+    "записка к Рэю/Восточному сектору не считается автоматически в руках Акиры; статус зависит от сыгранной сцены и inventory_state"
+  ],
+  "last_scene_notes": [],
+  "knowledge_history": []
 }

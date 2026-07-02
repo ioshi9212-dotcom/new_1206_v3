@@ -1,0 +1,23 @@
+id: "akira"
+name: "Акира Акацуми"
+load_mode: "conditional"
+main: "characters/akira/main.yaml"
+character: "characters/akira/character.yaml"
+knowledge: "characters/akira/knowledge.yaml"
+past: "characters/akira/past.yaml"
+dynamic_memory: "state/character_memory/akira.json"
+summary: >-
+  Главный POV линии 1206: 25 лет, 165 см, платиново-белые волосы ниже талии, почти чёрные карие глаза с янтарно-красным отблеском на свету.
+  Память и эмоции частично закрыты; осознанный доступ к энергии пространства заблокирован. Сухая, ядовитая, собранная, с сильной телесной памятью и осторожностью к касаниям.
+  Не грузить автоматически, если Акиры нет в сцене, POV, цели, упоминании или state update.
+load_when:
+  - "POV is Akira"
+  - "Akira active/present/speaking/observing/addressed"
+  - "scene goal directly involves Akira"
+  - "relationship_pair with Akira is required"
+  - "Akira receives state update"
+forbidden:
+  - "не делать её центром сцены автоматически"
+  - "не раскрывать hidden past как её знание"
+  - "не писать за неё значимые решения/согласия/признания"
+  - "не делать её водным магом: вода/шторм/волна — метафора пространства"
