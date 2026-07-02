@@ -1,0 +1,25 @@
+{
+  "id": "kai",
+  "version": "character_memory_1206_v1",
+  "status": "active",
+  "character_id": "kai",
+  "scope": "dynamic_scene_memory_only",
+  "rule": "Store only what Kai personally saw, heard, learned, assumed, hid, promised or was affected by during play. Permanent canon stays in characters/kai/*.yaml.",
+  "seen": [],
+  "heard": [],
+  "knows_as_fact": [],
+  "assumes": [],
+  "mistaken_beliefs_current": [],
+  "does_not_know_active": [
+    "Akira's past",
+    "Akira and Raiden's old bond",
+    "Samuel's laboratory role regarding Akira",
+    "Irey and Emma's role unless introduced in scene",
+    "hidden lore"
+  ],
+  "hides_currently": [],
+  "agreements": [],
+  "open_threads": [],
+  "protected_moments": [],
+  "last_scene_summary": ""
+}
