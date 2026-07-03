@@ -126,6 +126,50 @@ def _payload(body: dict[str, Any] | None) -> dict[str, Any]:
     return body
 
 
+
+def _requested_chunk_index(payload: dict[str, Any], default: int = 0) -> int:
+    """Accept chunk index from new endpoint or legacy/nested requestMoreContext payloads.
+
+    Custom GPT sometimes puts chunk_index inside requested_blocks when it follows
+    the old requestMoreContext operation. Treat top-level chunk_index, force_chunk,
+    next_chunk_index, and nested requested_blocks.* as equivalent.
+    """
+    candidates: list[Any] = [
+        payload.get("chunk_index"),
+        payload.get("force_chunk"),
+        payload.get("next_chunk_index"),
+    ]
+    for container_key in ("requested_blocks", "chunk", "context_chunk", "required_chunk"):
+        nested = payload.get(container_key)
+        if isinstance(nested, dict):
+            candidates.extend([
+                nested.get("chunk_index"),
+                nested.get("force_chunk"),
+                nested.get("next_chunk_index"),
+                nested.get("index"),
+            ])
+    scene_plan = payload.get("scene_plan")
+    if isinstance(scene_plan, dict):
+        nested = scene_plan.get("requested_blocks") or scene_plan.get("required_blocks")
+        if isinstance(nested, dict):
+            candidates.extend([
+                nested.get("chunk_index"),
+                nested.get("force_chunk"),
+                nested.get("next_chunk_index"),
+                nested.get("index"),
+            ])
+    for value in candidates:
+        if value is None:
+            continue
+        try:
+            text = str(value).strip()
+            if text == "":
+                continue
+            return max(0, int(text))
+        except Exception:
+            continue
+    return max(0, int(default or 0))
+
 def _trim(value: Any, max_chars: int = 500) -> str:
     text = str(value or "")
     text = re.sub(r"\n{3,}", "\n\n", text).strip()
@@ -735,10 +779,7 @@ def get_required_context_chunk(session_id: str, body: dict[str, Any] | None = Bo
     contract = payload.get("turn_contract") if isinstance(payload.get("turn_contract"), dict) else None
     if not contract:
         contract = _build_turn_contract(sid, payload)
-    try:
-        chunk_index = int(payload.get("chunk_index", 0))
-    except Exception:
-        chunk_index = 0
+    chunk_index = _requested_chunk_index(payload, default=0)
     chunks = contract.get("required_chunks") if isinstance(contract.get("required_chunks"), list) else []
     total = len(chunks)
     has_more = chunk_index + 1 < total
@@ -747,7 +788,7 @@ def get_required_context_chunk(session_id: str, body: dict[str, Any] | None = Bo
         "success": True,
         "session_id": sid,
         "runtime_version": RUNTIME_VERSION,
-        "mode": "v3_hybrid_required_context_chunk",
+        "mode": "v3_hybrid_required_context_chunk_v5",
         "chunk_index": chunk_index,
         "chunk_type": chunk_meta.get("chunk_type"),
         "total_chunks": total,
@@ -781,8 +822,10 @@ def request_context_slice(session_id: str, body: dict[str, Any] | None = Body(de
 @app.post("/api/v3/sessions/{session_id}/context-more", operation_id="requestMoreContext")
 def request_more_context(session_id: str, body: dict[str, Any] | None = Body(default=None)) -> dict[str, Any]:
     payload = _payload(body)
-    payload.setdefault("reason", "expanded_followup_context")
-    payload.setdefault("chunk_index", 0)
+    payload.setdefault("reason", "legacy_requestMoreContext_chunk_bridge")
+    # Compatibility: Actions may put chunk_index inside requested_blocks.
+    # Normalize it to top-level so this endpoint cannot loop forever on chunk 0.
+    payload["chunk_index"] = _requested_chunk_index(payload, default=0)
     return get_required_context_chunk(session_id, payload)
 
 
