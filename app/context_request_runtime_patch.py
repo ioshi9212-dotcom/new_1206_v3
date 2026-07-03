@@ -676,3 +676,243 @@ try:
     app.version = RUNTIME_VERSION
 except Exception:
     pass
+
+
+# ---------------------------------------------------------------------------
+# 0.3.191 Actions size guard
+# Keep knowledge protection, but return an action-safe compact context_slice.
+# ---------------------------------------------------------------------------
+
+def _short_list(items: Any, *, max_items: int = 4, max_chars: int = 260) -> list[str]:
+    if not isinstance(items, list):
+        items = [items] if items else []
+    out: list[str] = []
+    seen: set[str] = set()
+    for item in items:
+        if isinstance(item, (dict, list)):
+            txt = json.dumps(item, ensure_ascii=False, sort_keys=True)
+        else:
+            txt = str(item or "")
+        txt = _trim(txt, max_chars)
+        if txt and txt not in seen:
+            seen.add(txt)
+            out.append(txt)
+        if len(out) >= max_items:
+            break
+    return out
+
+
+def _slim_current_state(current: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "scene_id": current.get("current_scene_id") or current.get("scene_id"),
+        "date": current.get("current_date") or current.get("date"),
+        "phase": current.get("current_day_phase") or current.get("time_of_day"),
+        "location_id": current.get("current_location_id") or current.get("location_id"),
+        "location_text": current.get("current_location_text") or current.get("location_text"),
+        "pov": current.get("pov_character_id"),
+        "scene_characters": _short_list(current.get("scene_character_ids", []), max_items=5, max_chars=40),
+        "speaking": _short_list(current.get("speaking_character_ids", []), max_items=5, max_chars=60),
+        "addressed": _short_list(current.get("addressed_character_ids", []), max_items=5, max_chars=60),
+        "relationship_pairs": _short_list(current.get("relationship_pair_ids", []), max_items=6, max_chars=80),
+        "engine_items_not_npc_knowledge": _short_list(current.get("visible_inventory", []) + current.get("nearby_items", []), max_items=5, max_chars=90),
+        "scene_goal": _trim(current.get("scene_goal") or current.get("current_scene_goal"), 220),
+        "last_player_input": _trim(current.get("last_player_input"), 220),
+        "start_scene_completed": bool(current.get("start_scene_completed")),
+    }
+
+
+def _slim_calendar(sid: str, current: dict[str, Any]) -> dict[str, Any]:
+    runtime = _read_json(CALENDAR_RUNTIME_FILE, sid, {})
+    if not isinstance(runtime, dict):
+        runtime = {}
+    return {
+        "date": current.get("current_date") or runtime.get("current_date"),
+        "phase": current.get("current_day_phase") or runtime.get("current_day_phase"),
+        "beat": runtime.get("current_beat_id") or current.get("current_beat_id"),
+        "pending": _short_list(runtime.get("pending_events", []), max_items=4, max_chars=120),
+    }
+
+
+def _slim_location(current: dict[str, Any], scene_plan: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id": current.get("current_location_id") or current.get("location_id"),
+        "text": current.get("current_location_text") or current.get("location_text"),
+        "detail": scene_plan.get("location_detail") or scene_plan.get("location_depth") or "basic",
+        "sound_rule": "Do not add click/creak if current scene says movement is silent.",
+    }
+
+
+def _slim_maintenance(sid: str) -> dict[str, Any]:
+    m = _maintenance_slice(sid)
+    return {
+        "turn_counter": m.get("turn_counter"),
+        "audit_due_10": bool(m.get("state_recovery_audit_due")),
+        "cleanup_due_15": bool(m.get("state_compaction_cleanup_due")),
+        "recent_history_depth": m.get("recent_history_depth"),
+    }
+
+
+def _slim_knowledge_boundary(cid: str, knowledge_text: str, memory: dict[str, Any], presence: str) -> dict[str, Any]:
+    base_boundary = _temporary_knowledge_boundary(cid, knowledge_text, memory, presence)
+    critical_forbidden: list[str] = []
+    critical_unknown: list[str] = []
+    if cid in {"emma", "irey"}:
+        critical_unknown = ["не знает про записку/Восточный сектор", "не знает документы Акацуми", "не знает амнезию Акиры"]
+        critical_forbidden = ["Рэй/Восточный сектор", "документы Акацуми", "амнезия/блок Акиры"]
+    elif cid == "jun":
+        critical_unknown = ["не знает имена Эммы/Ирэя", "не знает их точные цели", "не знает кто отправил"]
+        critical_forbidden = ["Эмма/Ирэй как имена", "точные цели пришедших", "что они знают про записку/Рэя"]
+    return {
+        "source_files": f"characters/{cid}/knowledge.yaml + state/character_memory/{cid}.json",
+        "can_say_as_fact": _short_list(base_boundary.get("can_say_as_fact", []), max_items=2, max_chars=105),
+        "believes_or_assumes": _short_list(base_boundary.get("believes_or_assumes", []), max_items=2, max_chars=105),
+        "does_not_know": _short_list(critical_unknown + list(base_boundary.get("does_not_know", [])), max_items=4, max_chars=105),
+        "forbidden_as_fact": _short_list(critical_forbidden + list(base_boundary.get("forbidden_as_fact", [])), max_items=4, max_chars=105),
+        "rule": "Belief ≠ fact. Engine/POV items ≠ NPC knowledge unless seen/heard/source says so.",
+    }
+
+
+def _slim_character_slice(sid: str, cid: str, request: Any, current: dict[str, Any], player_input: str, scene_plan: dict[str, Any]) -> dict[str, Any]:
+    main_path = f"characters/{cid}/main.yaml"
+    char_path = f"characters/{cid}/character.yaml"
+    know_path = f"characters/{cid}/knowledge.yaml"
+    mem_path = f"state/character_memory/{cid}.json"
+    main = _read_text(main_path, sid)
+    char = _read_text(char_path, sid)
+    knowledge = _read_text(know_path, sid)
+    memory = _read_json(mem_path, sid, {})
+    if not isinstance(memory, dict):
+        memory = {}
+    req = request if isinstance(request, dict) else {}
+    needs = req.get("needs") if isinstance(req.get("needs"), dict) else {}
+    presence = req.get("presence_level") or req.get("level") or "background_visible"
+    dialogue_scene = _scene_is_dialogue_or_pressure(player_input, scene_plan)
+    current_speaking = [_canonical_id(x) for x in (current.get("speaking_character_ids") or [])]
+    current_addressed = [_canonical_id(x) for x in (current.get("addressed_character_ids") or [])]
+    if cid in current_speaking or needs.get("speech") or needs.get("voice"):
+        presence = "speaking"
+    elif cid in current_addressed or (dialogue_scene and cid != current.get("pov_character_id") and cid in [_canonical_id(x) for x in current.get("scene_character_ids", [])]):
+        presence = "speaking"
+    if current.get("start_scene_exact_text_required") and not current.get("start_scene_completed"):
+        presence = "start_scene_reference_only"
+    out: dict[str, Any] = {
+        "id": cid,
+        "visible_label_default": VISIBLE_LABELS.get(cid, cid),
+        "presence": presence,
+        "identity": _grep_lines(main, ["имя", "name", "роль", "role", "возраст", "age", "рост", "height"], max_lines=2, max_chars=150),
+        "appearance": _grep_lines(main, ["внеш", "appearance", "волос", "hair", "глаз", "eyes", "одеж"], max_lines=1, max_chars=80),
+    }
+    if presence in {"speaking", "emotionally_relevant", "combat_or_energy"} or needs.get("voice") or needs.get("behavior"):
+        out["voice_behavior"] = _grep_lines(char, ["voice", "speech", "голос", "речь", "характер", "поведен", "habit"], max_lines=2, max_chars=160)
+    if presence in {"speaking", "emotionally_relevant"} or needs.get("knowledge"):
+        out["knowledge_boundary"] = _slim_knowledge_boundary(cid, knowledge, memory, "speaking" if presence == "speaking" else presence)
+    if presence == "combat_or_energy" or needs.get("energy") or needs.get("combat"):
+        out["energy_hint"] = _grep_lines(char, ["energy", "энерг", "combat", "бой", "перегруз", "overload"], max_lines=3, max_chars=200)
+    return out
+
+
+def _slim_relationship_slices(sid: str, payload: dict[str, Any], current: dict[str, Any]) -> dict[str, Any]:
+    scene_plan = payload.get("scene_plan") if isinstance(payload.get("scene_plan"), dict) else {}
+    rel_need = scene_plan.get("relationships") or scene_plan.get("needs", {}).get("relationships") or payload.get("relationships")
+    if rel_need in [False, "false", "none", "no"]:
+        return {}
+    pair_ids = payload.get("relationship_pair_ids") or scene_plan.get("relationship_pair_ids") or current.get("relationship_pair_ids", [])[:3]
+    result: dict[str, Any] = {}
+    for pair in pair_ids[:3]:
+        pid = str(pair or "").strip()
+        if "__" not in pid:
+            continue
+        path = f"state/relationship_pairs/{pid}.json"
+        data = _read_json(path, sid, {})
+        if not isinstance(data, dict) or not data:
+            continue
+        surface = data.get("surface_dynamic") if isinstance(data.get("surface_dynamic"), dict) else {}
+        result[pid] = {
+            "source_file": path,
+            "status": data.get("status"),
+            "summary": _trim(surface.get("summary") or data.get("summary") or data.get("purpose"), 110),
+            "tension": _trim(surface.get("tension") or surface.get("current_tension") or data.get("tension"), 80),
+            "trust": _trim(surface.get("trust") or data.get("trust"), 80),
+        }
+    return result
+
+
+def _slim_render_contract() -> dict[str, Any]:
+    return {
+        "source_file": RENDER_CONTRACT_PATH,
+        "must_be_last_writer_instruction": True,
+        "header_required": "🌘 Восточный сектор · 1206 г., {date}\n🕒 {phase} · 📍 {location}\n⚙️ Активное состояние сцены: {tension}\n✦ POV: {pov} · {visible_state}\n🧥 {outfit}\n◈ {items}\n━━━━━━━━━━━━━━━━━━━━",
+        "dialogue_format_required": "**Имя** — реплика.",
+        "bottom_blocks": ["Что можно сделать", "Что Акира могла бы сказать", "Мысли Акиры", "Состояние", "Риск/Отношения только если изменились"],
+        "do_not": ["API/debug text", "NPC names before source", "POV choices"],
+    }
+
+
+def _slim_context_rules() -> dict[str, str]:
+    return {
+        "speaking_npc_knowledge": "speaking NPC always has knowledge_boundary",
+        "engine_state_boundary": "engine/POV inventory is not NPC knowledge",
+        "past_energy_lore": "blocked unless explicit trigger",
+    }
+
+
+_remove_route("/api/v3/sessions/{session_id}/context-request", "POST")
+_remove_route("/api/v3/sessions/{session_id}/context-more", "POST")
+
+
+@app.post("/api/v3/sessions/{session_id}/context-request", operation_id="requestContextSlice")
+def request_context_slice(session_id: str, body: dict[str, Any] | None = Body(default=None)) -> dict[str, Any]:
+    sid = _sid(session_id)
+    current = _ensure_current(sid)
+    payload = _payload(body)
+    scene_plan = payload.get("scene_plan") if isinstance(payload.get("scene_plan"), dict) else {}
+    explicit_input = payload.get("player_input") or payload.get("user_input") or scene_plan.get("player_input") or scene_plan.get("user_input")
+    player_input = _trim(explicit_input or current.get("last_player_input"), 300)
+    char_requests = payload.get("character_requests") or scene_plan.get("character_requests") or scene_plan.get("characters") or payload.get("characters") or {}
+    if not isinstance(char_requests, dict):
+        char_requests = {}
+    cids = _collect_requested_character_ids(payload, current, player_input, scene_plan)[:4]
+    # POV state is in current_state; do not spend action budget on POV character card unless explicitly requested.
+    explicit_chars = set()
+    for key in ("character_requests", "characters", "character_ids"):
+        val = payload.get(key) or scene_plan.get(key)
+        if isinstance(val, dict):
+            explicit_chars.update(_canonical_id(k) for k in val.keys())
+        elif isinstance(val, list):
+            explicit_chars.update(_canonical_id(x) for x in val)
+    pov_id = _canonical_id(current.get("pov_character_id"))
+    cids = [cid for cid in cids if cid != pov_id or cid in explicit_chars][:4]
+    characters = {cid: _slim_character_slice(sid, cid, char_requests.get(cid, {}), current, player_input, scene_plan) for cid in cids}
+    start_scene_available = bool(current.get("start_scene_exact_text_required") and not current.get("start_scene_completed"))
+    input_warning = None
+    if not explicit_input and not start_scene_available:
+        input_warning = "No explicit player_input/user_input; used current_state.last_player_input. Ordinary turns must pass exact input."
+    response = {
+        "success": True,
+        "session_id": sid,
+        "runtime_version": RUNTIME_VERSION,
+        "mode": "v3_context_slice_action_slim",
+        "player_input": player_input,
+        "input_consistency": {"explicit_input_received": bool(explicit_input), "warning": input_warning},
+        "context_slice": {
+            "current_state": _slim_current_state(current),
+            "calendar": _slim_calendar(sid, current),
+            "location": _slim_location(current, scene_plan),
+            "maintenance": _slim_maintenance(sid),
+            "recent_scene_history": _history_slice(sid, 1),
+            "characters": characters,
+            "relationships": _slim_relationship_slices(sid, payload, current),
+            "blocked_blocks": {"past": "blocked unless hard trigger", "energy": "blocked unless energy/combat/training", "deep_lore": "blocked unless explicit"},
+            "rules": _slim_context_rules(),
+            "knowledge_boundary_contract": {"rule": "NPC states only own can_say_as_fact/seen/heard; forbidden_as_fact and does_not_know cannot be used as facts.", "unknown_names_use_visible_labels": VISIBLE_LABELS},
+            "final_render_contract": _slim_render_contract(),
+        },
+        "size_guard": "context_slice is intentionally slim; use requestMoreContext for one extra block if needed",
+        "next_action": "writeScene" if not start_scene_available else "getStartSceneText",
+    }
+    return response
+
+
+@app.post("/api/v3/sessions/{session_id}/context-more", operation_id="requestMoreContext")
+def request_more_context(session_id: str, body: dict[str, Any] | None = Body(default=None)) -> dict[str, Any]:
+    return request_context_slice(session_id, body)
