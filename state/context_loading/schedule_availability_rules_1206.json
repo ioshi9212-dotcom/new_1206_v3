@@ -1,0 +1,40 @@
+{
+  "id": "schedule_availability_rules_1206",
+  "version": "v1_placeholder",
+  "status": "empty_schedule_files_allowed",
+  "purpose": "Railway must check schedule before allowing characters in scenes. Schedule files are placeholders until filled by author.",
+  "schedule_files": [
+    "schedule/base_weekly_schedule.yaml",
+    "schedule/base_daily_routine.yaml",
+    "schedule/squad_weekly_raids.yaml",
+    "schedule/lessons_and_training_schedule.yaml",
+    "schedule/staff_shifts.yaml",
+    "schedule/location_activity_windows.yaml"
+  ],
+  "if_schedule_empty": {
+    "rule": "Do not invent exact raids/classes. Use only current_state and explicit scene data. Ambient NPCs may appear only from location rules, not named main characters.",
+    "main_characters": "available only if current_state/scene_contract explicitly places them there",
+    "ambient_staff": "allowed only by location tag and broad activity window if defined"
+  },
+  "availability_statuses": [
+    "present",
+    "nearby",
+    "off_base",
+    "on_raid",
+    "training",
+    "lesson",
+    "medical",
+    "resting",
+    "sleeping",
+    "duty",
+    "unknown"
+  ],
+  "deny_if": [
+    "on_raid",
+    "off_base",
+    "lesson_elsewhere",
+    "training_elsewhere",
+    "medical_unavailable",
+    "sleeping_and_no_scene_reason"
+  ]
+}

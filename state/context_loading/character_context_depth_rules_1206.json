@@ -1,0 +1,108 @@
+{
+  "id": "character_context_depth_rules_1206",
+  "version": "v1",
+  "presence_levels": {
+    "mentioned_only": {
+      "include": [
+        "id",
+        "name",
+        "role",
+        "availability"
+      ],
+      "exclude": [
+        "appearance",
+        "voice",
+        "energy",
+        "past",
+        "deep_relationship"
+      ]
+    },
+    "background_visible": {
+      "include": [
+        "id",
+        "name_or_role",
+        "role",
+        "appearance_basic",
+        "location_function",
+        "one_behavior_trait"
+      ],
+      "exclude": [
+        "voice",
+        "energy",
+        "past",
+        "deep_relationship",
+        "full_knowledge"
+      ]
+    },
+    "present_silent": {
+      "include": [
+        "identity",
+        "appearance_basic",
+        "current_state",
+        "surface_behavior",
+        "surface_relationship_if_relevant"
+      ],
+      "exclude": [
+        "voice",
+        "energy",
+        "past",
+        "full_knowledge"
+      ]
+    },
+    "speaking": {
+      "include": [
+        "identity",
+        "appearance_basic",
+        "voice",
+        "speech_style",
+        "behavior",
+        "scene_goal",
+        "relevant_knowledge",
+        "does_not_know_relevant",
+        "relationship_surface_or_direct"
+      ],
+      "exclude": [
+        "energy unless triggered",
+        "past unless triggered"
+      ]
+    },
+    "emotionally_relevant": {
+      "include": [
+        "inner_conflicts",
+        "emotional_triggers",
+        "relationship_pair",
+        "character_memory_relevant",
+        "hides_from",
+        "does_not_know"
+      ],
+      "exclude": [
+        "energy unless triggered",
+        "past unless triggered"
+      ]
+    },
+    "combat_or_energy": {
+      "include": [
+        "energy",
+        "combat_style",
+        "weaknesses",
+        "overload",
+        "control_loss"
+      ],
+      "when": "combat/training/energy trigger only"
+    },
+    "past_triggered": {
+      "include": [
+        "selected_past_block_only"
+      ],
+      "when": "hard past trigger only"
+    }
+  },
+  "appearance_basic": "age_or_age_hint + height_or_build + hair + eyes + role + one impression",
+  "appearance_detailed_when": [
+    "first_meeting",
+    "pov_studies_character",
+    "new_clothes_relevant",
+    "injury_or_condition_visible",
+    "visual_focus"
+  ]
+}

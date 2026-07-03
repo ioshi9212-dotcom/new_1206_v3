@@ -1,0 +1,148 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "1206 v3 Context Request",
+  "type": "object",
+  "required": [
+    "session_id",
+    "player_input",
+    "scene_plan"
+  ],
+  "properties": {
+    "session_id": {
+      "type": "string"
+    },
+    "player_input": {
+      "type": "string"
+    },
+    "scene_plan": {
+      "type": "object",
+      "required": [
+        "scene_type",
+        "pov_character_id",
+        "needs"
+      ],
+      "properties": {
+        "scene_type": {
+          "type": "string",
+          "description": "transition, observation, dialogue, conflict, combat, lesson, rest, flashback, location_inspection, etc."
+        },
+        "pov_character_id": {
+          "type": "string"
+        },
+        "current_location_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "target_location_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "location_focus": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "expected_characters": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "needs": {
+          "type": "object",
+          "properties": {
+            "state": {
+              "enum": [
+                "active",
+                "none"
+              ]
+            },
+            "calendar": {
+              "enum": [
+                "current_beat_only",
+                "today_slice",
+                "near_future",
+                "none"
+              ]
+            },
+            "location": {
+              "type": "array",
+              "items": {
+                "enum": [
+                  "basic",
+                  "visual",
+                  "exits",
+                  "sound",
+                  "rules",
+                  "hazards",
+                  "lore"
+                ]
+              }
+            },
+            "schedule": {
+              "type": "boolean"
+            },
+            "ambient_npcs": {
+              "type": "boolean"
+            },
+            "main_characters": {
+              "enum": [
+                "none",
+                "available_only",
+                "specific_only",
+                "nearby_or_heard_only"
+              ]
+            },
+            "relationships": {
+              "enum": [
+                "none",
+                "surface_only",
+                "direct_pair_only",
+                "deep_if_conflict"
+              ]
+            },
+            "knowledge": {
+              "enum": [
+                "none",
+                "only_for_speaking_npc",
+                "relevant_only",
+                "deep_if_decision"
+              ]
+            },
+            "energy": {
+              "type": "boolean"
+            },
+            "combat": {
+              "type": "boolean"
+            },
+            "past": {
+              "type": "boolean"
+            },
+            "lore": {
+              "enum": [
+                "none",
+                "surface",
+                "operational",
+                "hidden_if_triggered"
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        "character_requests": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object"
+          }
+        }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": false
+}

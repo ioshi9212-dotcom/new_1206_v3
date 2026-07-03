@@ -1,0 +1,46 @@
+{
+  "id": "location_context_depth_rules_1206",
+  "version": "v1",
+  "depths": {
+    "basic": {
+      "include": [
+        "location_id",
+        "name",
+        "type",
+        "privacy",
+        "usual_activity",
+        "visibility_sound_basic"
+      ],
+      "when": "every scene"
+    },
+    "visual": {
+      "include": [
+        "lighting",
+        "smell",
+        "noise",
+        "layout",
+        "visible_exits",
+        "current_crowd"
+      ],
+      "when": "first entry / POV looks around / atmosphere focus"
+    },
+    "rules": {
+      "include": [
+        "guards",
+        "cameras_or_posts",
+        "discipline_rules",
+        "who_can_intervene",
+        "what_is_forbidden"
+      ],
+      "when": "conflict/security/noise/trespass/fight"
+    },
+    "lore": {
+      "include": [
+        "history",
+        "symbolism",
+        "secrets_if_allowed"
+      ],
+      "when": "explicit question or plot trigger only"
+    }
+  }
+}

@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "1206 v3 Context Slice Response",
+  "type": "object",
+  "required": [
+    "success",
+    "session_id",
+    "context_slice"
+  ],
+  "properties": {
+    "success": {
+      "type": "boolean"
+    },
+    "session_id": {
+      "type": "string"
+    },
+    "context_slice": {
+      "type": "object",
+      "properties": {
+        "state": {
+          "type": "object"
+        },
+        "calendar": {
+          "type": "object"
+        },
+        "location": {
+          "type": "object"
+        },
+        "schedule": {
+          "type": "object"
+        },
+        "character_slices": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object"
+          }
+        },
+        "ambient_npcs": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        },
+        "relationship_slices": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object"
+          }
+        },
+        "blocked_blocks": {
+          "type": "object"
+        },
+        "render_rules": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "next_allowed_requests": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": false
+}

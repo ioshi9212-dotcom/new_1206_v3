@@ -1,0 +1,22 @@
+id: ambient_npc_template
+file_type: ambient_npc_template
+status: template
+purpose: >
+  Маленькая карточка фонового NPC. Не использовать как полноценного персонажа.
+  Фоновые NPC дают миру жизнь, но не перехватывают сцену и не знают hidden lore.
+
+fields:
+  id: "unique_id"
+  name_or_role: "буфетчик / уборщик / охранник / техник"
+  location_tags: []
+  availability_tags: []
+  appearance_basic: "1 короткая фраза"
+  behavior_basic:
+    - "1–3 черты поведения"
+  can:
+    - "дать короткую бытовую реплику"
+    - "создать фон/шум/маленький конфликт"
+  cannot:
+    - "раскрывать лор"
+    - "знать скрытые факты персонажей"
+    - "становиться важным без сохранения в state/session_npcs"

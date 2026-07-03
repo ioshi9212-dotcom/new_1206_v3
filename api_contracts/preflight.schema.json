@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "1206 v3 Preflight Response",
+  "type": "object",
+  "required": [
+    "success",
+    "session_id",
+    "current_state",
+    "calendar_focus",
+    "last_scene_summary",
+    "next_action"
+  ],
+  "properties": {
+    "success": {
+      "type": "boolean"
+    },
+    "session_id": {
+      "type": "string"
+    },
+    "current_state": {
+      "type": "object",
+      "description": "Small active state slice only. No full character cards."
+    },
+    "calendar_focus": {
+      "type": "object",
+      "description": "Current date/day_phase/current beat and near events only."
+    },
+    "last_scene_summary": {
+      "type": "string"
+    },
+    "immediate_constraints": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "available_request_modes": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "next_action": {
+      "type": "string",
+      "const": "contextRequest"
+    }
+  },
+  "additionalProperties": true
+}
