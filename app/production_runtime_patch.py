@@ -1,11 +1,10 @@
 """Production entrypoint for Akira 1206 v3 standalone API.
 
-This version is action-safe: Custom GPT Actions must not receive huge full-card
-scene contracts. The API now exposes a small preflight -> context_request ->
-context_slice pipeline. Full cards remain on Railway and are sliced by blocks.
-
-0.3.190 exposes explicit requestBody properties in the custom OpenAPI schema so
-Custom GPT Actions can pass player_input, scene_plan, and proposed_updates.
+Hybrid action-safe schema:
+- processTurn stores the player input and returns a light ack.
+- getTurnContract lets Railway decide what this scene needs.
+- getRequiredContextManifest returns the chunk plan.
+- getRequiredContextChunk returns small, ordered context chunks until has_more=false.
 """
 from __future__ import annotations
 
@@ -109,10 +108,10 @@ def health() -> dict[str, Any]:
         "version": RUNTIME_VERSION,
         "public_base_url": base.BASE_URL,
         "standalone_v3": True,
-        "context_pipeline": "preflight_context_request_context_slice",
-        "knowledge_boundary": "speaking_npc_always",
+        "context_pipeline": "hybrid_turn_contract_manifest_chunks",
+        "knowledge_boundary": "visible_source_and_name_permission",
         "maintenance_runtime": "turn10_recovery_turn15_cleanup",
-        "final_render_contract": "last_context_slice_block",
+        "final_render_contract": "last_required_context_chunk",
         "large_contract_actions_disabled": True,
     }
 
@@ -139,7 +138,7 @@ def create_session(body: dict[str, Any] | None = Body(default=None)) -> dict[str
         "mode": "session_ack_light",
         "current_frame": _current_frame_ack(current_state),
         "next_action": "getPreflight",
-        "note": "Session is ready. Do not request full scene_contract; call getPreflight, then requestContextSlice.",
+        "note": "Session is ready. Do not request full scene_contract; call getPreflight, then getTurnContract -> getRequiredContextManifest -> getRequiredContextChunk until has_more=false.",
     }
 
 
@@ -156,8 +155,8 @@ def start_session(body: dict[str, Any] | None = Body(default=None)) -> dict[str,
 def process_turn(session_id: str, body: dict[str, Any] | None = Body(default=None)) -> dict[str, Any]:
     """Store player input/current-state overrides and return a light ack.
 
-    The GPT should then call requestContextSlice instead of receiving a full
-    contract from this endpoint.
+    The GPT should then call getTurnContract, getRequiredContextManifest and all
+    getRequiredContextChunk calls before writing the scene.
     """
     payload = _payload(body)
     sid = base.ensure_session(session_id)
@@ -205,7 +204,8 @@ def process_turn(session_id: str, body: dict[str, Any] | None = Body(default=Non
         "player_input": player_input,
         "start_command_detected": start_command,
         "current_frame": _current_frame_ack(current_state),
-        "next_action": "requestContextSlice",
+        "next_action": "getTurnContract",
+        "required_sequence": ["getTurnContract", "getRequiredContextManifest", "getRequiredContextChunk until has_more=false", "writeScene"],
     }
 
 
@@ -257,8 +257,31 @@ def openapi_actions() -> dict[str, Any]:
         "knowledge_boundary_required": {"type": "boolean"},
         "needs": object_any,
     })
+    turn_contract_body_schema = _object_schema({
+        "player_input": {"type": "string", "description": "Exact latest player action/reply."},
+        "user_input": {"type": "string", "description": "Alias for player_input."},
+        "scene_plan": scene_plan_schema,
+        "character_requests": object_any,
+        "characters": object_any,
+        "needs": object_any,
+    })
+    manifest_body_schema = _object_schema({
+        "player_input": {"type": "string"},
+        "user_input": {"type": "string"},
+        "scene_plan": scene_plan_schema,
+        "turn_contract": object_any,
+        "needs": object_any,
+    })
+    chunk_body_schema = _object_schema({
+        "chunk_index": {"type": "integer", "description": "Start with 0 and continue until has_more=false."},
+        "player_input": {"type": "string"},
+        "user_input": {"type": "string"},
+        "scene_plan": scene_plan_schema,
+        "turn_contract": object_any,
+        "needs": object_any,
+    }, required=["chunk_index"])
     context_request_body_schema = _object_schema({
-        "player_input": {"type": "string", "description": "Exact latest player message/action/reply; do not rely on old start input."},
+        "player_input": {"type": "string", "description": "Legacy. Prefer getTurnContract + manifest/chunks."},
         "user_input": {"type": "string", "description": "Alias for player_input."},
         "scene_plan": scene_plan_schema,
         "character_requests": object_any,
@@ -266,10 +289,11 @@ def openapi_actions() -> dict[str, Any]:
         "needs": object_any,
     })
     context_more_body_schema = _object_schema({
+        "chunk_index": {"type": "integer"},
         "player_input": {"type": "string"},
         "user_input": {"type": "string"},
         "scene_plan": scene_plan_schema,
-        "character_requests": object_any,
+        "turn_contract": object_any,
         "requested_blocks": object_any,
         "reason": {"type": "string"},
     })
@@ -295,84 +319,45 @@ def openapi_actions() -> dict[str, Any]:
         "info": {
             "title": "Akira 1206 v3 Actions",
             "version": RUNTIME_VERSION,
-            "description": "Action-safe API: start -> preflight -> context_request/context_slice -> apply_turn_result.",
+            "description": "Hybrid API: start/processTurn -> getTurnContract -> getRequiredContextManifest -> getRequiredContextChunk loop -> apply_turn_result.",
         },
         "servers": [{"url": base.BASE_URL.rstrip("/")}],
         "paths": {
             "/health": {
-                "get": {
-                    "operationId": "health",
-                    "summary": "Health check",
-                    "responses": {"200": _response("OK")},
-                }
+                "get": {"operationId": "health", "summary": "Health check", "responses": {"200": _response("OK")}}
             },
             "/api/v1/start": {
-                "post": {
-                    "operationId": "startSession",
-                    "summary": "Start a fresh 1206 v3 session; returns only a light ack.",
-                    "requestBody": {"required": False, "content": {"application/json": {"schema": start_body_schema}}},
-                    "responses": {"200": _response("Light session ack")},
-                }
+                "post": {"operationId": "startSession", "summary": "Start a fresh 1206 v3 session; returns only a light ack.", "requestBody": {"required": False, "content": {"application/json": {"schema": start_body_schema}}}, "responses": {"200": _response("Light session ack")}}
             },
             "/api/v1/sessions": {
-                "post": {
-                    "operationId": "createSession",
-                    "summary": "Create or ensure a session; returns only a light ack.",
-                    "requestBody": {"required": False, "content": {"application/json": {"schema": create_session_body_schema}}},
-                    "responses": {"200": _response("Light session ack")},
-                }
-            },
-            "/api/v3/sessions/{session_id}/preflight": {
-                "get": {
-                    "operationId": "getPreflight",
-                    "summary": "Get small current-state/calendar/recent-events preflight before planning a scene.",
-                    "parameters": [_session_path_param()],
-                    "responses": {"200": _response("Preflight slice")},
-                }
-            },
-            "/api/v3/sessions/{session_id}/context-request": {
-                "post": {
-                    "operationId": "requestContextSlice",
-                    "summary": "Ask Railway for only the semantic blocks needed for the next scene.",
-                    "parameters": [_session_path_param()],
-                    "requestBody": {"required": False, "content": {"application/json": {"schema": context_request_body_schema}}},
-                    "responses": {"200": _response("Context slice")},
-                }
-            },
-            "/api/v3/sessions/{session_id}/context-more": {
-                "post": {
-                    "operationId": "requestMoreContext",
-                    "summary": "Ask for one additional approved context block if the scene deepens.",
-                    "parameters": [_session_path_param()],
-                    "requestBody": {"required": False, "content": {"application/json": {"schema": context_more_body_schema}}},
-                    "responses": {"200": _response("Additional context slice")},
-                }
-            },
-            "/api/v3/sessions/{session_id}/start-scene-text": {
-                "get": {
-                    "operationId": "getStartSceneText",
-                    "summary": "Get the exact first-scene text only when preflight says exact_text_required.",
-                    "parameters": [_session_path_param()],
-                    "responses": {"200": _response("Exact start scene text")},
-                }
+                "post": {"operationId": "createSession", "summary": "Create or ensure a session; returns only a light ack.", "requestBody": {"required": False, "content": {"application/json": {"schema": create_session_body_schema}}}, "responses": {"200": _response("Light session ack")}}
             },
             "/api/v1/sessions/{session_id}/turn": {
-                "post": {
-                    "operationId": "processTurn",
-                    "summary": "Store player input/current-state overrides; returns a light ack, not a full contract.",
-                    "parameters": [_session_path_param()],
-                    "requestBody": {"required": True, "content": {"application/json": {"schema": process_turn_body_schema}}},
-                    "responses": {"200": _response("Light turn ack")},
-                }
+                "post": {"operationId": "processTurn", "summary": "Store player input/current-state overrides; then call getTurnContract.", "parameters": [_session_path_param()], "requestBody": {"required": True, "content": {"application/json": {"schema": process_turn_body_schema}}}, "responses": {"200": _response("Light turn ack")}}
+            },
+            "/api/v3/sessions/{session_id}/preflight": {
+                "get": {"operationId": "getPreflight", "summary": "Get small current frame only; do not write scene from this.", "parameters": [_session_path_param()], "responses": {"200": _response("Preflight slice")}}
+            },
+            "/api/v3/sessions/{session_id}/turn-contract": {
+                "post": {"operationId": "getTurnContract", "summary": "Railway decides scene needs: characters, knowledge, energy/lore/past only if triggered. Call before manifest/chunks.", "parameters": [_session_path_param()], "requestBody": {"required": False, "content": {"application/json": {"schema": turn_contract_body_schema}}}, "responses": {"200": _response("Hybrid turn contract")}}
+            },
+            "/api/v3/sessions/{session_id}/required-context/manifest": {
+                "post": {"operationId": "getRequiredContextManifest", "summary": "Return ordered context chunks required for this turn. Then call getRequiredContextChunk from 0 until has_more=false.", "parameters": [_session_path_param()], "requestBody": {"required": False, "content": {"application/json": {"schema": manifest_body_schema}}}, "responses": {"200": _response("Required context manifest")}}
+            },
+            "/api/v3/sessions/{session_id}/required-context/chunk": {
+                "post": {"operationId": "getRequiredContextChunk", "summary": "Load one small context chunk. Start with chunk_index=0 and repeat until has_more=false before writing the scene.", "parameters": [_session_path_param()], "requestBody": {"required": True, "content": {"application/json": {"schema": chunk_body_schema}}}, "responses": {"200": _response("Required context chunk")}}
+            },
+            "/api/v3/sessions/{session_id}/context-request": {
+                "post": {"operationId": "requestContextSlice", "summary": "Legacy compatibility endpoint. Prefer getTurnContract + manifest/chunks.", "parameters": [_session_path_param()], "requestBody": {"required": False, "content": {"application/json": {"schema": context_request_body_schema}}}, "responses": {"200": _response("Context manifest pointer")}}
+            },
+            "/api/v3/sessions/{session_id}/context-more": {
+                "post": {"operationId": "requestMoreContext", "summary": "Legacy compatibility endpoint for one additional chunk.", "parameters": [_session_path_param()], "requestBody": {"required": False, "content": {"application/json": {"schema": context_more_body_schema}}}, "responses": {"200": _response("Additional context chunk")}}
+            },
+            "/api/v3/sessions/{session_id}/start-scene-text": {
+                "get": {"operationId": "getStartSceneText", "summary": "Get the exact first-scene text only when preflight/chunk says exact_text_required.", "parameters": [_session_path_param()], "responses": {"200": _response("Exact start scene text")}}
             },
             "/api/v1/sessions/{session_id}/apply-turn-result": {
-                "post": {
-                    "operationId": "applyTurnResult",
-                    "summary": "Apply proposed_updates after a scene.",
-                    "parameters": [_session_path_param()],
-                    "requestBody": {"required": False, "content": {"application/json": {"schema": apply_body_schema}}},
-                    "responses": {"200": _response("Apply result")},
-                }
+                "post": {"operationId": "applyTurnResult", "summary": "Apply proposed_updates after a scene.", "parameters": [_session_path_param()], "requestBody": {"required": False, "content": {"application/json": {"schema": apply_body_schema}}}, "responses": {"200": _response("Apply result")}}
             },
         },
     }

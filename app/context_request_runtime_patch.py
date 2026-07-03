@@ -1,11 +1,12 @@
-"""Action-safe character context pipeline for Akira 1206 v3.
+"""Hybrid manifest/chunk context pipeline for Akira 1206 v3.
 
-Single replacement patch. No extra runtime layers.
+Single replacement file. No extra runtime layers.
 
 Principle:
-- POV character always gets a compact writer card.
-- Active/speaking NPCs get compact role/goal/voice/knowledge/unknowns/reaction cards.
-- Response stays small enough for Custom GPT Actions by returning targeted lines, not full YAML sections.
+- Railway plans the turn and decides what context is needed.
+- Custom GPT receives several small chunks, not one huge JSON blob.
+- Character depth is preserved: identity brief + voice + behavior + goal + knowledge boundary are always present.
+- Energy, deep appearance, lore and past are loaded only when the current turn actually needs them.
 """
 from __future__ import annotations
 
@@ -42,38 +43,59 @@ ID_ALIASES = {
     "кай": "kai", "kai": "kai",
 }
 
-VISIBLE_LABELS = {
+IDENTITY_OVERRIDES = {
+    "akira": "25 лет; взрослая девушка; рост 165; платиново-белые/белые волосы; тёмно-карие глаза с янтарным отблеском. Нейтрально не называть девочкой.",
+    "jun": "взрослый мужчина; хозяин дома; для Акиры — Джун/отец/опекун по сыгранному контексту; для Эммы/Ирэя на старте — неизвестный мужчина.",
+    "irey": "взрослый мужчина/парень; белые волосы; пространственно-сенсорная связь через касание; внешне сдержаннее, чем его внутренняя цель.",
+    "emma": "взрослая девушка/женщина; резкая, грубая, эмоциональная; не декор и не удобная кнопка экспозиции.",
+    "ray": "взрослый мужчина в форме; командующий Восточного сектора; условное/отложенное появление.",
+    "raiden": "взрослый высокий мужчина/рейдер; условное/отложенное появление, не активен в стартовой комнате.",
+}
+
+DEFAULT_VISIBLE_LABELS = {
     "akira": "Акира",
     "jun": "Джун",
     "emma": "беловолосая девушка",
     "irey": "беловолосый парень",
     "ray": "мужчина в форме",
-    "raiden": "парень с пирсингом",
+    "raiden": "высокий рейдер",
 }
+
+UNKNOWN_NAME_RULES = [
+    "Internal character_id/display_name is engine knowledge, not automatic scene permission.",
+    "If POV or speaker has not heard/read a name in-scene or from state knowledge, use a stable visible descriptor.",
+    "Akira does not know Emma/Irey by name at the start: use descriptors until a visible name source appears.",
+    "Emma and Irey do not know engine:jun by name at the start: in their speech use 'мужчина', 'хозяин дома', 'тот, кто её прятал', not 'Джун/Картер'.",
+    "Do not call 25-year-old Akira 'девочка' in narration or neutral labels. Use 'Акира', 'девушка', 'цель', or an intentionally hostile descriptor only if character voice requires it.",
+]
 
 DIALOGUE_HINTS = (
     "говор", "объяс", "спрос", "ответ", "кто", "что", "зачем", "почему",
     "молчи", "слуш", "вопрос", "назов", "памят", "помн", "узна", "смотр",
 )
+ENERGY_HINTS = (
+    "энерг", "сила", "поток", "эхо", "кайрос", "простран", "холод", "огонь",
+    "вода", "воздух", "подавлен", "перегруз", "браслет", "барьер", "касани",
+)
+PAST_HINTS = ("прошл", "вспом", "памят", "академ", "райден", "самуэль", "беремен", "ребен", "ребён", "лаборатор")
+APPEARANCE_HINTS = ("осмотреть", "выгляд", "лицо", "рост", "волос", "глаза", "шрам", "одеж", "форма", "опис")
+LORE_HINTS = ("эхо", "кайрос", "восточный сектор", "рейдер", "сектор", "самуэль", "система", "заказчик")
+INVENTORY_HINTS = ("карман", "ножниц", "документ", "записк", "блокнот", "оруж", "стол", "взять", "убрать", "пояс")
 
-# Targeted patterns keep scene logic, not full card dumps.
 CHARACTER_PATTERNS = {
-    "voice": ("voice", "speech", "голос", "реплик", "tone", "style"),
-    "goal": ("goal", "цель", "primary_goal", "current_goal", "защит", "контрол", "скры"),
-    "reaction": (
-        "не узна", "не помн", "пуст", "чуж", "теряется", "пауза", "сух",
-        "реакц", "trigger", "visible", "боль", "сдерж", "дистанц", "вопрос",
-    ),
-    "behavior": ("behavior", "body_language", "микр", "движ", "дистанц", "рук", "выход", "угроз"),
-    "player_control": ("player_control", "игрок", "не писать", "не задавать", "не соглаш"),
-    "ability": ("energy", "ability", "способ", "поток", "энерг", "касани", "простран"),
+    "voice": ("voice", "speech", "голос", "реплик", "tone", "style", "говорит", "речь"),
+    "goal": ("goal", "цель", "primary_goal", "current_goal", "защит", "контрол", "скры", "достав", "заказчик", "система"),
+    "reaction": ("не узна", "не помн", "пуст", "чуж", "теряется", "пауза", "сух", "реакц", "trigger", "visible", "боль", "сдерж", "дистанц", "вопрос"),
+    "behavior": ("behavior", "body_language", "habit", "микр", "движ", "дистанц", "рук", "выход", "угроз", "взгляд"),
+    "player_control": ("player_control", "игрок", "не писать", "не задавать", "не соглаш", "pov_rules"),
+    "ability": ("energy", "ability", "способ", "поток", "энерг", "касани", "простран", "вода", "холод", "огонь"),
 }
 
 KNOWLEDGE_PATTERNS = {
     "knows": ("знает", "knows", "known", "stable_knows", "starting_knowledge", "known_at_start"),
     "unknowns": ("не знает", "does_not_know", "unknown", "stable_does_not_know", "unknown_at_start", "strict_unknowns"),
     "hides": ("скрывает", "withholds", "hides", "sealed", "locked", "не раскры"),
-    "rules": ("rule", "правил", "disclosure", "inference", "assumption", "предполага"),
+    "rules": ("rule", "правил", "disclosure", "inference", "assumption", "предполага", "источник"),
 }
 
 
@@ -168,8 +190,8 @@ def _compact(value: Any, *, max_chars: int = 700, max_items: int = 8, depth: int
         keys = [
             "summary", "current_goal", "current_status", "memory", "knows_as_fact", "knows",
             "does_not_know", "suspects", "assumes", "wrongly_believes", "is_hiding",
-            "future_hooks", "recent_scene_notes", "last_interaction", "ray_to_akira",
-            "akira_to_ray", "irey_to_akira", "emma_to_akira", "jun_to_akira",
+            "future_hooks", "recent_scene_notes", "last_interaction", "surface_dynamic",
+            "ray_to_akira", "akira_to_ray", "irey_to_akira", "emma_to_akira", "jun_to_akira",
         ]
         ordered = [k for k in keys if k in value] + [k for k in value if k not in keys]
         return {k: _compact(value[k], max_chars=max_chars, max_items=max_items, depth=depth - 1) for k in ordered[:max_items]}
@@ -231,6 +253,11 @@ def _memory_lines(memory: dict[str, Any], keys: tuple[str, ...], *, max_items: i
     return [x for x in joined.splitlines() if x.strip()]
 
 
+def _scene_text(payload: dict[str, Any], current: dict[str, Any], scene_plan: dict[str, Any]) -> str:
+    explicit = payload.get("player_input") or payload.get("user_input") or scene_plan.get("player_input") or scene_plan.get("user_input")
+    return _trim(explicit or current.get("last_player_input"), 700)
+
+
 def _scene_is_dialogue_or_pressure(player_input: str, scene_plan: dict[str, Any]) -> bool:
     text = (player_input or "").lower().replace("ё", "е")
     scene_type = str(scene_plan.get("scene_type") or scene_plan.get("type") or "").lower()
@@ -239,17 +266,34 @@ def _scene_is_dialogue_or_pressure(player_input: str, scene_plan: dict[str, Any]
     return any(x in text for x in DIALOGUE_HINTS)
 
 
+def _needs(payload: dict[str, Any], current: dict[str, Any], scene_plan: dict[str, Any], player_input: str) -> dict[str, bool]:
+    low = " ".join([player_input, json.dumps(scene_plan, ensure_ascii=False), str(current.get("scene_goal") or "")]).lower().replace("ё", "е")
+    requested = payload.get("needs") if isinstance(payload.get("needs"), dict) else {}
+    required_blocks = scene_plan.get("required_blocks") if isinstance(scene_plan.get("required_blocks"), dict) else {}
+    return {
+        "dialogue_or_pressure": _scene_is_dialogue_or_pressure(player_input, scene_plan),
+        "energy": bool(requested.get("energy") or required_blocks.get("energy") or any(x in low for x in ENERGY_HINTS)),
+        "past": bool(current.get("load_past") or requested.get("past") or any(x in low for x in PAST_HINTS)),
+        "deep_appearance": bool(requested.get("appearance") or any(x in low for x in APPEARANCE_HINTS)),
+        "lore": bool(requested.get("lore") or any(x in low for x in LORE_HINTS)),
+        "inventory": bool(requested.get("inventory") or required_blocks.get("inventory") or any(x in low for x in INVENTORY_HINTS)),
+        "calendar": True,
+        "location": True,
+        "render_contract": True,
+    }
+
+
 def _collect_character_ids(payload: dict[str, Any], current: dict[str, Any], scene_plan: dict[str, Any], player_input: str) -> list[str]:
     ids: list[str] = []
     _add_id(ids, current.get("pov_character_id"))
-    for key in ("speaking_character_ids", "addressed_character_ids", "present_character_ids"):
+    for key in ("speaking_character_ids", "addressed_character_ids", "present_character_ids", "observing_character_ids"):
         _add_id(ids, current.get(key))
-    for key in ("speaking_characters", "addressed_characters", "present_characters", "character_ids", "characters", "character_requests"):
+    for key in ("speaking_characters", "addressed_characters", "present_characters", "observing_characters", "character_ids", "characters", "character_requests"):
         _add_id(ids, scene_plan.get(key))
         _add_id(ids, payload.get(key))
     _add_id(ids, current.get("scene_character_ids") or current.get("active_character_ids"))
-    # Keep hard cap. More can be requested through requestMoreContext with requested_blocks.characters.
-    return ids[:6]
+    # Keep chunk size bounded. Further characters must be delayed or requested through context-more.
+    return ids[:7]
 
 
 def _role_for(cid: str, current: dict[str, Any], scene_plan: dict[str, Any]) -> str:
@@ -269,69 +313,126 @@ def _role_for(cid: str, current: dict[str, Any], scene_plan: dict[str, Any]) -> 
     return "referenced"
 
 
-def _character_card(sid: str, cid: str, role: str, expanded: bool = False) -> dict[str, Any]:
+def _visible_labels_for(cid: str, current: dict[str, Any]) -> dict[str, str]:
+    visible_start = current.get("visible_relationships_start") if isinstance(current.get("visible_relationships_start"), dict) else {}
+    for_pov = DEFAULT_VISIBLE_LABELS.get(cid, cid)
+    if cid in visible_start and isinstance(visible_start[cid], dict):
+        for_pov = str(visible_start[cid].get("visible_label") or for_pov)
+    return {
+        "for_pov_akira": for_pov,
+        "for_emma": "мужчина / хозяин дома" if cid == "jun" else DEFAULT_VISIBLE_LABELS.get(cid, cid),
+        "for_irey": "мужчина / хозяин дома" if cid == "jun" else DEFAULT_VISIBLE_LABELS.get(cid, cid),
+        "rule": "Use visible descriptor unless the speaking character has an in-scene/source-backed name permission.",
+    }
+
+
+def _character_sources(sid: str, cid: str) -> tuple[str, str, str, dict[str, Any]]:
     char_text = _read_text(f"characters/{cid}/character.yaml", sid)
     know_text = _read_text(f"characters/{cid}/knowledge.yaml", sid)
     main_text = _read_text(f"characters/{cid}/main.yaml", sid)
     memory = _read_json(f"state/character_memory/{cid}.json", sid, {})
     if not isinstance(memory, dict):
         memory = {}
+    return char_text, know_text, main_text, memory
 
-    # Normal cards are intentionally compact. Expanded cards are still bounded.
-    line_boost = 14 if expanded or role == "pov" else 8
-    char_budget = 1500 if expanded or role == "pov" else 900
-    know_budget = 1500 if expanded or role == "pov" else 1000
 
-    card: dict[str, Any] = {
+def _goal_override(cid: str) -> list[str]:
+    if cid == "emma":
+        return [
+            "External goal: get Akira to the hidden customer/system; pressure first, do not become exposition tool.",
+            "Emma believes Irey is moving in the same task, but does not know his true personal/protective goal.",
+            "Emma may bluff or misread; confidence is not proof of knowledge.",
+        ]
+    if cid == "irey":
+        return [
+            "External cover: appears connected to the same search/task as Emma.",
+            "Hidden personal goal: protect Akira and prevent the system/Samuel line from taking her if possible.",
+            "If Akira looks at him as a stranger, he must register it: pause, test, question, misread or hide the reaction.",
+        ]
+    if cid == "jun":
+        return ["Current goal: delay, protect Akira, keep the downstairs pressure away from her as long as possible."]
+    if cid == "akira":
+        return ["POV: player controls important words/choices; show guarded body, silence, microreaction, not invented confessions."]
+    return []
+
+
+def _knowledge_guard_override(cid: str) -> dict[str, list[str]]:
+    if cid == "emma":
+        return {
+            "knows": ["Akira is needed by the hidden customer/system; Akira's trace was found near the house; Irey reacts too personally."],
+            "does_not_know": ["Does not know engine:jun by name; does not know he hid/raised/protected Akira; does not know Akira's amnesia; does not know Ray/Raiden connection."],
+            "speech_guard": ["Must not say 'Джун' or 'Картер' until an in-scene source gives the name."],
+        }
+    if cid == "irey":
+        return {
+            "knows": ["Knows more about Akira than Emma; has a personal/protective motive; can notice body/recognition mismatch."],
+            "does_not_know": ["Does not know engine:jun by name at start unless a played source gives it; does not know exact last two years; does not know what Akira currently remembers."],
+            "speech_guard": ["Must refer to engine:jun as 'мужчина', 'хозяин дома', 'тот, кто её прятал' until name source."],
+        }
+    if cid == "akira":
+        return {
+            "knows": ["Remembers the last two years with Jun and current visible objects; does not automatically know hidden lore or strangers' names."],
+            "does_not_know": ["Does not know Emma/Irey names at start; does not know East Sector structure, Kairos/Echo terms, Raiden/Ray/Samuel history unless source appears."],
+            "speech_guard": ["If player did not write Akira's speech outside parentheses, do not invent important Akira speech."],
+        }
+    return {"knows": [], "does_not_know": [], "speech_guard": []}
+
+
+def _character_core_card(sid: str, cid: str, role: str, needs: dict[str, bool]) -> dict[str, Any]:
+    char_text, know_text, main_text, memory = _character_sources(sid, cid)
+    line_boost = 11 if role == "pov" else 8
+    if needs.get("dialogue_or_pressure"):
+        line_boost += 2
+    identity_lines = _matching_lines(main_text + "\n" + char_text, ("возраст", "рост", "волос", "глаз", "внеш", "appearance", "height", "age"), max_lines=6 if needs.get("deep_appearance") else 3, max_chars=500)
+    return {
         "id": cid,
-        "visible_label_default": VISIBLE_LABELS.get(cid, cid),
-        "role_in_context": role,
-        "source_files": [
-            f"characters/{cid}/character.yaml",
-            f"characters/{cid}/knowledge.yaml",
-            f"state/character_memory/{cid}.json",
-        ],
-        "identity_role_goal": (
-            _matching_lines(main_text + "\n" + char_text, CHARACTER_PATTERNS["goal"], max_lines=6, max_chars=600)
-        ),
-        "voice_behavior": _matching_lines(char_text, CHARACTER_PATTERNS["voice"] + CHARACTER_PATTERNS["behavior"], max_lines=line_boost, max_chars=char_budget),
-        "must_react_to": _matching_lines(char_text + "\n" + know_text, CHARACTER_PATTERNS["reaction"], max_lines=line_boost, max_chars=char_budget),
-        "knows_or_assumes": (
-            _matching_lines(know_text, KNOWLEDGE_PATTERNS["knows"] + KNOWLEDGE_PATTERNS["rules"], max_lines=line_boost, max_chars=know_budget)
-            + _memory_lines(memory, ("knows", "assumes", "suspects", "предполага", "знает"), max_items=6, max_chars=700)
-        )[:line_boost],
-        "does_not_know_or_hides": (
-            _matching_lines(know_text, KNOWLEDGE_PATTERNS["unknowns"] + KNOWLEDGE_PATTERNS["hides"], max_lines=line_boost, max_chars=know_budget)
-            + _memory_lines(memory, ("does_not_know", "не знает", "hiding", "is_hiding", "скры"), max_items=6, max_chars=700)
-        )[:line_boost],
-        "current_memory_hooks": _compact(memory.get("memory") or memory.get("current_status") or memory, max_chars=900 if expanded else 550, max_items=6, depth=2),
+        "role_in_scene": role,
+        "identity_brief": IDENTITY_OVERRIDES.get(cid) or _trim("; ".join(identity_lines), 500) or f"{cid}: use loaded card only; do not invent appearance.",
+        "visible_labels": _visible_labels_for(cid, _ensure_current(sid)),
+        "current_goal_priority": _goal_override(cid) + _matching_lines(main_text + "\n" + char_text, CHARACTER_PATTERNS["goal"], max_lines=6, max_chars=700),
+        "voice_behavior_habits": _matching_lines(char_text, CHARACTER_PATTERNS["voice"] + CHARACTER_PATTERNS["behavior"], max_lines=line_boost, max_chars=1200),
+        "must_react_to_now": _matching_lines(char_text + "\n" + know_text, CHARACTER_PATTERNS["reaction"], max_lines=line_boost, max_chars=1200),
+        "player_control_or_npc_rule": "POV: do not invent important Akira replies/questions/agreements." if role == "pov" else "NPC: each line must come from goal + visible source + knowledge/unknown boundary.",
+        "energy_loaded": bool(needs.get("energy")),
+        "energy_note": "Energy is omitted in this chunk because the scene did not request/trigger energy." if not needs.get("energy") else "Energy details are in energy_lore chunk.",
+        "source_files_used": [f"characters/{cid}/character.yaml", f"characters/{cid}/knowledge.yaml", f"state/character_memory/{cid}.json"],
     }
 
-    if role == "pov":
-        card["pov_required"] = True
-        card["pov_voice_limits"] = _matching_lines(
-            char_text + "\n" + know_text,
-            CHARACTER_PATTERNS["voice"] + CHARACTER_PATTERNS["player_control"] + ("known_at_start", "unknown_at_start", "pov_rules", "пуст", "микр"),
-            max_lines=18,
-            max_chars=1800,
-        )
-        card["player_control_rule"] = "Do not invent important Akira replies/questions/agreements. If player did not give a key reply, show microreaction and stop for choice."
-    else:
-        card["npc_line_rule"] = "Before each line: use this NPC's knows/unknowns/hides. Unknowns should create questions, checks, pauses, pressure, evasion or wrong assumptions, not omniscience."
 
-    ability = _matching_lines(char_text + "\n" + know_text, CHARACTER_PATTERNS["ability"], max_lines=6 if expanded else 3, max_chars=800)
-    if ability:
-        card["ability_if_relevant"] = ability
-
-    return card
+def _character_knowledge_card(sid: str, cid: str, role: str, needs: dict[str, bool]) -> dict[str, Any]:
+    char_text, know_text, main_text, memory = _character_sources(sid, cid)
+    guard = _knowledge_guard_override(cid)
+    line_boost = 10 if role in {"pov", "speaking", "addressed"} else 7
+    return {
+        "id": cid,
+        "role_in_scene": role,
+        "known_as_fact": guard.get("knows", []) + _matching_lines(know_text, KNOWLEDGE_PATTERNS["knows"] + KNOWLEDGE_PATTERNS["rules"], max_lines=line_boost, max_chars=1100) + _memory_lines(memory, ("knows", "assumes", "suspects", "предполага", "знает"), max_items=5, max_chars=700),
+        "unknown_or_forbidden": guard.get("does_not_know", []) + _matching_lines(know_text, KNOWLEDGE_PATTERNS["unknowns"] + KNOWLEDGE_PATTERNS["hides"], max_lines=line_boost, max_chars=1100) + _memory_lines(memory, ("does_not_know", "не знает", "hiding", "is_hiding", "скры"), max_items=5, max_chars=700),
+        "speech_and_name_guard": guard.get("speech_guard", []) + UNKNOWN_NAME_RULES,
+        "unknowns_are_active_rule": "Unknowns should create questions, checks, pauses, pressure, evasion, bluffing or wrong assumptions — not omniscience and not silence.",
+    }
 
 
-def _relationship_cards(sid: str, current: dict[str, Any], payload: dict[str, Any], expanded: bool = False) -> dict[str, Any]:
-    pairs = payload.get("relationship_pair_ids") or current.get("relationship_pair_ids", [])
+def _energy_card(sid: str, cids: list[str]) -> dict[str, Any]:
     result: dict[str, Any] = {}
-    for pair in list(pairs)[:5 if expanded else 4]:
+    for cid in cids:
+        char_text, know_text, _main_text, _memory = _character_sources(sid, cid)
+        ability = _matching_lines(char_text + "\n" + know_text, CHARACTER_PATTERNS["ability"], max_lines=7, max_chars=900)
+        if ability:
+            result[cid] = ability
+    return {"energy_loaded_for": list(result.keys()), "characters": result, "rule": "Use only if energy is visible, used, sensed, discussed or mechanically relevant this turn."}
+
+
+def _relationship_cards(sid: str, current: dict[str, Any], payload: dict[str, Any], cids: list[str]) -> dict[str, Any]:
+    pairs = payload.get("relationship_pair_ids") or current.get("relationship_pair_ids", [])
+    focus = set(cids)
+    result: dict[str, Any] = {}
+    for pair in list(pairs)[:8]:
         pid = str(pair or "").strip()
         if "__" not in pid:
+            continue
+        left, right = pid.split("__", 1)
+        if left not in focus and right not in focus:
             continue
         path = f"state/relationship_pairs/{pid}.json"
         data = _read_json(path, sid, {})
@@ -346,11 +447,12 @@ def _relationship_cards(sid: str, current: dict[str, Any], payload: dict[str, An
             ),
             "reaction_hooks": _compact(
                 {
-                    "left_to_right": data.get(str(pid.split("__")[0]) + "_to_" + str(pid.split("__")[1])),
-                    "right_to_left": data.get(str(pid.split("__")[1]) + "_to_" + str(pid.split("__")[0])),
+                    "left_to_right": data.get(str(left) + "_to_" + str(right)),
+                    "right_to_left": data.get(str(right) + "_to_" + str(left)),
                     "last_interaction": data.get("last_interaction"),
+                    "open_thread": data.get("open_thread") or data.get("future_hooks"),
                 },
-                max_chars=900 if expanded else 650,
+                max_chars=850,
                 max_items=6,
                 depth=2,
             ),
@@ -375,8 +477,8 @@ def _current_state_slice(current: dict[str, Any]) -> dict[str, Any]:
         "relationship_pair_ids": current.get("relationship_pair_ids", []),
         "visible_inventory": _compact(current.get("visible_inventory", []), max_chars=450, max_items=8, depth=2),
         "nearby_items": _compact(current.get("nearby_items", []), max_chars=450, max_items=8, depth=2),
-        "scene_goal": _trim(current.get("scene_goal") or current.get("current_scene_goal"), 450),
-        "last_player_input": _trim(current.get("last_player_input"), 300),
+        "scene_goal": _trim(current.get("scene_goal") or current.get("current_scene_goal"), 500),
+        "last_player_input": _trim(current.get("last_player_input"), 450),
         "start_scene_exact_text_required": bool(current.get("start_scene_exact_text_required")),
         "start_scene_completed": bool(current.get("start_scene_completed")),
         "boundary_note": "Inventory/state are not NPC knowledge unless the NPC saw/heard/source confirms it.",
@@ -396,7 +498,7 @@ def _calendar_slice(sid: str, current: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _history_slice(sid: str, depth: int = 3) -> list[dict[str, Any]]:
+def _history_slice(sid: str, depth: int = 4) -> list[dict[str, Any]]:
     history = _read_json(SCENE_HISTORY_FILE, sid, [])
     if isinstance(history, dict):
         history = history.get("entries", [])
@@ -407,19 +509,44 @@ def _history_slice(sid: str, depth: int = 3) -> list[dict[str, Any]]:
         if isinstance(item, dict):
             out.append({
                 "scene_id": item.get("scene_id") or item.get("id"),
-                "player_input": _trim(item.get("player_input"), 140),
-                "summary": _trim(item.get("summary") or item.get("visible_scene_text") or item.get("scene_text"), 350),
+                "player_input": _trim(item.get("player_input"), 160),
+                "summary": _trim(item.get("summary") or item.get("visible_scene_text") or item.get("scene_text"), 450),
             })
     return out
 
 
-def _location_slice(current: dict[str, Any], scene_plan: dict[str, Any]) -> dict[str, Any]:
+def _location_slice(current: dict[str, Any], scene_plan: dict[str, Any], needs: dict[str, bool]) -> dict[str, Any]:
     return {
         "location_id": scene_plan.get("location_id") or current.get("current_location_id") or current.get("location_id"),
         "location_text": current.get("current_location_text") or current.get("location_text"),
-        "requested_depth": scene_plan.get("location_depth") or scene_plan.get("needs", {}).get("location"),
+        "requested_depth": "short_rules" if not needs.get("deep_appearance") else "visual_plus_rules",
         "rule": "Use explicit location/current_state. Do not invent background NPCs or noises without source.",
     }
+
+
+def _inventory_slice(current: dict[str, Any], needs: dict[str, bool]) -> dict[str, Any]:
+    if not needs.get("inventory"):
+        return {"loaded": False, "note": "Inventory not triggered beyond current_state visible_inventory/nearby_items."}
+    return {
+        "loaded": True,
+        "visible_inventory": _compact(current.get("visible_inventory", []), max_chars=700, max_items=12, depth=2),
+        "nearby_items": _compact(current.get("nearby_items", []), max_chars=700, max_items=12, depth=2),
+        "inventory_state": _compact(current.get("inventory_state", {}), max_chars=900, max_items=8, depth=2),
+        "rule": "A taken item is visible to Akira, but not automatically known to NPCs unless they saw/heard it.",
+    }
+
+
+def _lore_slice(sid: str, needs: dict[str, bool]) -> dict[str, Any]:
+    if not needs.get("lore"):
+        return {"loaded": False, "note": "Lore omitted: no current trigger."}
+    # Keep this intentionally tiny; character knowledge still controls disclosure.
+    files = ["canon_lore/index.yaml", "canon_lore/core/world_background.yaml", "canon_lore/world/echo.yaml", "canon_lore/world/kairos.yaml"]
+    result = []
+    for path in files:
+        text = _read_text(path, sid)
+        if text:
+            result.append({"path": path, "excerpt": _trim(text, 800)})
+    return {"loaded": True, "files": result[:3], "rule": "Lore is engine context, not automatic NPC knowledge."}
 
 
 def _extract_start_scene_text() -> str:
@@ -432,24 +559,140 @@ def _render_contract_small() -> dict[str, Any]:
     data = _read_json(RENDER_CONTRACT_PATH, "default", {})
     if not isinstance(data, dict) or not data:
         return {
-            "dialogue_format": "**Имя** — реплика.",
+            "dialogue_format": "**Имя/видимый дескриптор** — реплика.",
             "pov_rule": "Respect POV knowledge and player control.",
             "bottom_blocks": ["Что можно сделать", "Что Акира могла бы сказать", "Мысли Акиры", "Состояние"],
+            "unknown_names_rule": "Engine-known id is not visible name permission.",
         }
-    # Do not return full contract; only the key writer constraints.
     return {
         "source_file": RENDER_CONTRACT_PATH,
         "must_be_last_writer_instruction": True,
-        "dialogue_format_required": data.get("dialogue_format_required") or "**Имя** — реплика.",
-        "unknown_names_rule": "If POV does not know a name, use visible descriptor, not engine id/display_name.",
+        "dialogue_format_required": data.get("dialogue_format_required") or "**Имя/видимый дескриптор** — реплика.",
+        "unknown_names_rule": "If POV/speaker does not know a name, use visible descriptor, not engine id/display_name.",
         "bottom_blocks_rule": "Keep choice/options/status blocks; do not expose hidden lore as POV thoughts.",
     }
 
 
-_remove_route("/api/v3/sessions/{session_id}/preflight", "GET")
-_remove_route("/api/v3/sessions/{session_id}/context-request", "POST")
-_remove_route("/api/v3/sessions/{session_id}/context-more", "POST")
-_remove_route("/api/v3/sessions/{session_id}/start-scene-text", "GET")
+def _build_turn_contract(sid: str, payload: dict[str, Any]) -> dict[str, Any]:
+    current = _ensure_current(sid)
+    scene_plan = payload.get("scene_plan") if isinstance(payload.get("scene_plan"), dict) else {}
+    player_input = _scene_text(payload, current, scene_plan)
+    needs = _needs(payload, current, scene_plan, player_input)
+    cids = _collect_character_ids(payload, current, scene_plan, player_input)
+    roles = {cid: _role_for(cid, current, scene_plan) for cid in cids}
+    chunks: list[dict[str, Any]] = [
+        {"chunk_index": 0, "chunk_type": "characters_core", "contains": cids, "why": "identity brief + voice + behavior + goals; energy omitted unless triggered"},
+        {"chunk_index": 1, "chunk_type": "knowledge_boundaries", "contains": cids, "why": "knows/unknowns/hidden/name permissions for current speakers"},
+        {"chunk_index": 2, "chunk_type": "state_relationships_memory", "contains": ["current_state", "recent_history", "relationship_pairs"], "why": "continuity and relationship pressure"},
+        {"chunk_index": 3, "chunk_type": "location_inventory_calendar_render", "contains": ["location", "inventory_if_needed", "calendar", "render_contract"], "why": "scene mechanics and final writer rules"},
+    ]
+    if needs.get("energy"):
+        chunks.append({"chunk_index": len(chunks), "chunk_type": "energy_lore", "contains": cids, "why": "energy/power/echo was triggered by this turn"})
+    if needs.get("lore"):
+        chunks.append({"chunk_index": len(chunks), "chunk_type": "world_lore_minimal", "contains": ["canon_lore_minimal"], "why": "world/lore terms were triggered by this turn"})
+    if needs.get("past"):
+        chunks.append({"chunk_index": len(chunks), "chunk_type": "past_memory_minimal", "contains": cids, "why": "past/memory trigger exists; still bounded"})
+    return {
+        "success": True,
+        "session_id": sid,
+        "runtime_version": RUNTIME_VERSION,
+        "mode": "v3_hybrid_turn_contract",
+        "player_input": player_input,
+        "current_frame": _current_state_slice(current),
+        "scene_plan_used": scene_plan,
+        "needs_decided_by_railway": needs,
+        "character_ids": cids,
+        "character_roles": roles,
+        "required_chunks": chunks,
+        "total_chunks": len(chunks),
+        "must_load_rule": "Call getRequiredContextManifest, then getRequiredContextChunk from chunk_index=0 until has_more=false before writing the scene.",
+        "next_action": "getRequiredContextManifest",
+    }
+
+
+def _manifest_from_contract(contract: dict[str, Any]) -> dict[str, Any]:
+    chunks = contract.get("required_chunks") if isinstance(contract.get("required_chunks"), list) else []
+    return {
+        "success": True,
+        "session_id": contract.get("session_id"),
+        "runtime_version": RUNTIME_VERSION,
+        "mode": "v3_hybrid_required_context_manifest",
+        "total_chunks": len(chunks),
+        "chunks": chunks,
+        "load_order_rule": "Load chunks in numeric order. Do not write scene until the last returned chunk has has_more=false.",
+        "next_action": "getRequiredContextChunk" if chunks else "writeScene",
+        "next_chunk_index": 0 if chunks else None,
+    }
+
+
+def _chunk_content(sid: str, contract: dict[str, Any], chunk_index: int) -> dict[str, Any]:
+    current = _ensure_current(sid)
+    needs = contract.get("needs_decided_by_railway") if isinstance(contract.get("needs_decided_by_railway"), dict) else {}
+    cids = contract.get("character_ids") if isinstance(contract.get("character_ids"), list) else []
+    cids = [_canonical_id(x) for x in cids][:7]
+    roles = contract.get("character_roles") if isinstance(contract.get("character_roles"), dict) else {cid: _role_for(cid, current, {}) for cid in cids}
+    chunks = contract.get("required_chunks") if isinstance(contract.get("required_chunks"), list) else []
+    chunk_type = "unknown"
+    if 0 <= chunk_index < len(chunks) and isinstance(chunks[chunk_index], dict):
+        chunk_type = str(chunks[chunk_index].get("chunk_type") or "unknown")
+
+    if chunk_type == "characters_core":
+        return {
+            "characters": {cid: _character_core_card(sid, cid, str(roles.get(cid) or "referenced"), needs) for cid in cids},
+            "global_character_rules": [
+                "Character behavior comes from loaded cards first, not generic scene convenience.",
+                "Appearance is brief unless deep_appearance=true; never invent hair/age/height against identity_brief.",
+                "Akira is 25 and controlled/empty/guarded; do not soften her or write major speech for her.",
+            ],
+        }
+    if chunk_type == "knowledge_boundaries":
+        return {
+            "characters": {cid: _character_knowledge_card(sid, cid, str(roles.get(cid) or "referenced"), needs) for cid in cids},
+            "visible_source_rule": "Characters know only what they saw, heard, were told, or can plausibly infer from visible signs. Engine ids and loaded file names are not in-world knowledge.",
+        }
+    if chunk_type == "state_relationships_memory":
+        return {
+            "current_state": _current_state_slice(current),
+            "recent_scene_history": _history_slice(sid, 5),
+            "relationships": _relationship_cards(sid, current, {"relationship_pair_ids": current.get("relationship_pair_ids", [])}, cids),
+            "story_lines_note": _compact(_read_json(STORY_LINES_FILE, sid, {}), max_chars=1200, max_items=6, depth=2),
+        }
+    if chunk_type == "location_inventory_calendar_render":
+        scene_plan = contract.get("scene_plan_used") if isinstance(contract.get("scene_plan_used"), dict) else {}
+        start_scene_available = bool(current.get("start_scene_exact_text_required") and not current.get("start_scene_completed"))
+        return {
+            "location": _location_slice(current, scene_plan, needs),
+            "inventory": _inventory_slice(current, needs),
+            "calendar": _calendar_slice(sid, current),
+            "start_scene": {"exact_text_required": start_scene_available, "text_endpoint": f"/api/v3/sessions/{sid}/start-scene-text" if start_scene_available else None},
+            "final_render_contract": _render_contract_small(),
+            "write_after_this_if_no_more_chunks": True,
+        }
+    if chunk_type == "energy_lore":
+        return _energy_card(sid, cids)
+    if chunk_type == "world_lore_minimal":
+        return _lore_slice(sid, needs)
+    if chunk_type == "past_memory_minimal":
+        result = {}
+        for cid in cids:
+            text = _read_text(f"characters/{cid}/past.yaml", sid)
+            if text:
+                result[cid] = _trim(text, 1200)
+        return {"past_loaded_for": list(result.keys()), "past_excerpts": result, "rule": "Use past only for triggered subtext/recognition, not exposition dump."}
+    return {"warning": "Unknown chunk type", "chunk_type": chunk_type}
+
+
+# Replace old action-safe endpoints from earlier patches.
+for _path, _method in [
+    ("/api/v3/sessions/{session_id}/preflight", "GET"),
+    ("/api/v3/sessions/{session_id}/context-request", "POST"),
+    ("/api/v3/sessions/{session_id}/context-more", "POST"),
+    ("/api/v3/sessions/{session_id}/start-scene-text", "GET"),
+    ("/api/v3/sessions/{session_id}/turn-contract", "POST"),
+    ("/api/v3/sessions/{session_id}/required-context/manifest", "POST"),
+    ("/api/v3/sessions/{session_id}/required-context/chunk", "POST"),
+]:
+    _remove_route(_path, _method)
 
 
 @app.get("/api/v3/sessions/{session_id}/preflight", operation_id="getPreflight")
@@ -460,80 +703,87 @@ def get_preflight(session_id: str) -> dict[str, Any]:
         "success": True,
         "session_id": sid,
         "runtime_version": RUNTIME_VERSION,
-        "mode": "v3_preflight_character_cards_small",
+        "mode": "v3_preflight_hybrid_small",
         "current_state": _current_state_slice(current),
         "calendar": _calendar_slice(sid, current),
         "recent_scene_history": _history_slice(sid, 3),
-        "next_action": "requestContextSlice",
-        "writer_note": "POV and active NPC cards are loaded in requestContextSlice as compact writer cards.",
+        "next_action": "getTurnContract",
+        "writer_note": "Do not write scene from preflight. Call getTurnContract, manifest, then all required chunks.",
+    }
+
+
+@app.post("/api/v3/sessions/{session_id}/turn-contract", operation_id="getTurnContract")
+def get_turn_contract(session_id: str, body: dict[str, Any] | None = Body(default=None)) -> dict[str, Any]:
+    sid = _sid(session_id)
+    return _build_turn_contract(sid, _payload(body))
+
+
+@app.post("/api/v3/sessions/{session_id}/required-context/manifest", operation_id="getRequiredContextManifest")
+def get_required_context_manifest(session_id: str, body: dict[str, Any] | None = Body(default=None)) -> dict[str, Any]:
+    sid = _sid(session_id)
+    payload = _payload(body)
+    contract = payload.get("turn_contract") if isinstance(payload.get("turn_contract"), dict) else None
+    if not contract:
+        contract = _build_turn_contract(sid, payload)
+    return _manifest_from_contract(contract)
+
+
+@app.post("/api/v3/sessions/{session_id}/required-context/chunk", operation_id="getRequiredContextChunk")
+def get_required_context_chunk(session_id: str, body: dict[str, Any] | None = Body(default=None)) -> dict[str, Any]:
+    sid = _sid(session_id)
+    payload = _payload(body)
+    contract = payload.get("turn_contract") if isinstance(payload.get("turn_contract"), dict) else None
+    if not contract:
+        contract = _build_turn_contract(sid, payload)
+    try:
+        chunk_index = int(payload.get("chunk_index", 0))
+    except Exception:
+        chunk_index = 0
+    chunks = contract.get("required_chunks") if isinstance(contract.get("required_chunks"), list) else []
+    total = len(chunks)
+    has_more = chunk_index + 1 < total
+    chunk_meta = chunks[chunk_index] if 0 <= chunk_index < total and isinstance(chunks[chunk_index], dict) else {"chunk_index": chunk_index, "chunk_type": "unknown"}
+    return {
+        "success": True,
+        "session_id": sid,
+        "runtime_version": RUNTIME_VERSION,
+        "mode": "v3_hybrid_required_context_chunk",
+        "chunk_index": chunk_index,
+        "chunk_type": chunk_meta.get("chunk_type"),
+        "total_chunks": total,
+        "has_more": has_more,
+        "next_chunk_index": chunk_index + 1 if has_more else None,
+        "content": _chunk_content(sid, contract, chunk_index),
+        "next_action": "getRequiredContextChunk" if has_more else "writeScene",
+        "write_scene_allowed": not has_more,
     }
 
 
 @app.post("/api/v3/sessions/{session_id}/context-request", operation_id="requestContextSlice")
 def request_context_slice(session_id: str, body: dict[str, Any] | None = Body(default=None)) -> dict[str, Any]:
     sid = _sid(session_id)
-    current = _ensure_current(sid)
     payload = _payload(body)
-    scene_plan = payload.get("scene_plan") if isinstance(payload.get("scene_plan"), dict) else {}
-    explicit_input = payload.get("player_input") or payload.get("user_input") or scene_plan.get("player_input") or scene_plan.get("user_input")
-    player_input = _trim(explicit_input or current.get("last_player_input"), 360)
-
-    requested_blocks = payload.get("requested_blocks") or scene_plan.get("required_blocks") or {}
-    expanded = bool(payload.get("expanded_context")) or bool(requested_blocks and payload.get("reason"))
-    cids = _collect_character_ids(payload, current, scene_plan, player_input)
-    roles = {cid: _role_for(cid, current, scene_plan) for cid in cids}
-
-    # If not dialogue/pressure, still load POV + present/speaking, but cards stay compact.
-    characters = {
-        cid: _character_card(sid, cid, roles[cid], expanded=(expanded and roles[cid] in {"pov", "speaking", "addressed"}))
-        for cid in cids
-    }
-
-    start_scene_available = bool(current.get("start_scene_exact_text_required") and not current.get("start_scene_completed"))
+    contract = _build_turn_contract(sid, payload)
+    manifest = _manifest_from_contract(contract)
     return {
         "success": True,
         "session_id": sid,
         "runtime_version": RUNTIME_VERSION,
-        "mode": "v3_context_slice_character_cards_small",
-        "player_input": player_input,
-        "input_consistency": {
-            "explicit_input_received": bool(explicit_input),
-            "warning": None if explicit_input else "No explicit input; used current_state.last_player_input.",
-        },
-        "context_slice": {
-            "current_state": _current_state_slice(current),
-            "calendar": _calendar_slice(sid, current),
-            "location": _location_slice(current, scene_plan),
-            "recent_scene_history": _history_slice(sid, 4 if expanded else 3),
-            "characters": characters,
-            "relationships": _relationship_cards(sid, current, payload, expanded=expanded),
-            "scene_rules": {
-                "pov_required": "POV character card is always present. Use it for Akira voice, emptiness, microreactions and player-control limits.",
-                "npc_reaction_required": "For each NPC line/reaction, check role/goal/knows/unknowns/hides/must_react_to.",
-                "unknowns_are_active": "If a character does not know something, they may question, check, lie, pause, evade or misread; do not make them passive furniture.",
-                "engine_state_not_npc_knowledge": True,
-            },
-            "blocked_blocks": {
-                "full_yaml": "not returned to Actions",
-                "deep_past": "requestMoreContext only if scene explicitly triggers it",
-                "full_relationships": "relationship summary/hooks only",
-            },
-            "start_scene": {
-                "exact_text_required": start_scene_available,
-                "text_endpoint": f"/api/v3/sessions/{sid}/start-scene-text" if start_scene_available else None,
-            },
-            "final_render_contract": _render_contract_small(),
-        },
-        "size_guard": "small writer cards; no full YAML sections",
-        "next_action": "getStartSceneText" if start_scene_available else "writeScene",
+        "mode": "v3_legacy_context_request_points_to_manifest_chunks",
+        "do_not_write_scene_yet": True,
+        "turn_contract": contract,
+        "required_context_manifest": manifest,
+        "next_action": "getRequiredContextChunk",
+        "next_chunk_index": 0,
     }
 
 
 @app.post("/api/v3/sessions/{session_id}/context-more", operation_id="requestMoreContext")
 def request_more_context(session_id: str, body: dict[str, Any] | None = Body(default=None)) -> dict[str, Any]:
     payload = _payload(body)
-    payload["expanded_context"] = True
-    return request_context_slice(session_id, payload)
+    payload.setdefault("reason", "expanded_followup_context")
+    payload.setdefault("chunk_index", 0)
+    return get_required_context_chunk(session_id, payload)
 
 
 @app.get("/api/v3/sessions/{session_id}/start-scene-text", operation_id="getStartSceneText")
@@ -567,8 +817,8 @@ def get_scene_contract_action_safe(session_id: str) -> dict[str, Any]:
         "runtime_version": RUNTIME_VERSION,
         "mode": "deprecated_scene_contract_action_safe_pointer",
         "current_state": _current_state_slice(current),
-        "message": "Full scene_contract is disabled for Actions. Use getPreflight then requestContextSlice.",
-        "next_action": "getPreflight",
+        "message": "Full scene_contract is disabled for Actions. Use getTurnContract -> getRequiredContextManifest -> getRequiredContextChunk loop.",
+        "next_action": "getTurnContract",
     }
 
 
@@ -585,11 +835,13 @@ def get_context_audit_action_safe(session_id: str) -> dict[str, Any]:
         "success": True,
         "session_id": sid,
         "runtime_version": RUNTIME_VERSION,
-        "mode": "v3_action_safe_context_audit_character_cards_small",
+        "mode": "v3_hybrid_context_audit",
         "current_state": _current_state_slice(current),
         "pov_character_must_load": True,
         "full_scene_contract_actions_disabled": True,
-        "context_request_endpoint": f"/api/v3/sessions/{sid}/context-request",
+        "turn_contract_endpoint": f"/api/v3/sessions/{sid}/turn-contract",
+        "manifest_endpoint": f"/api/v3/sessions/{sid}/required-context/manifest",
+        "chunk_endpoint": f"/api/v3/sessions/{sid}/required-context/chunk",
     }
 
 
