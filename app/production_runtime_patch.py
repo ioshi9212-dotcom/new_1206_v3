@@ -34,7 +34,7 @@ def _array_string() -> dict:
 
 
 def _response(description: str, schema: dict | None = None) -> dict:
-    return {"description": description, "content": {"application/json": {"schema": schema or {"type": "object", "additionalProperties": True}}}}
+    return {"description": description, "content": {"application/json": {"schema": schema or {"type": "object", "properties": {}, "additionalProperties": True}}}}
 
 
 def _session_path_param() -> dict:
@@ -192,7 +192,7 @@ def process_turn(session_id: str, body: dict[str, Any] | None = Body(default=Non
 
 
 def openapi_actions() -> dict[str, Any]:
-    object_any = {"type": "object", "additionalProperties": True}
+    object_any = {"type": "object", "properties": {}, "additionalProperties": True}
     return {
         "openapi": "3.1.0",
         "info": {
