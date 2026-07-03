@@ -1,0 +1,86 @@
+{
+  "id": "context_block_decision_rules_1206",
+  "version": "v1",
+  "always_include": {
+    "state": "active_current_only",
+    "location": "basic",
+    "calendar": "current_beat_only"
+  },
+  "include_by_need": {
+    "location_visual": [
+      "first_entry",
+      "pov_looks_around",
+      "atmosphere_focus",
+      "new_location"
+    ],
+    "location_rules": [
+      "conflict_possible",
+      "security_relevant",
+      "trespass",
+      "fight",
+      "noise_or_discipline"
+    ],
+    "schedule": [
+      "base_scene",
+      "public_location",
+      "character_availability_check",
+      "movement_between_locations"
+    ],
+    "ambient_npcs": [
+      "public_location",
+      "staffed_location",
+      "cafeteria",
+      "medblock",
+      "gates",
+      "training_hall",
+      "corridor_active_hours"
+    ],
+    "relationships": [
+      "direct_interaction",
+      "meaningful_observation",
+      "conflict",
+      "trust_change",
+      "scene_goal_about_pair"
+    ],
+    "knowledge": [
+      "npc_answers_question",
+      "npc_explains",
+      "npc_decides",
+      "npc_hides_information",
+      "npc_names_or_identifies_someone"
+    ],
+    "energy": [
+      "combat",
+      "training",
+      "overload",
+      "lecture_about_energy",
+      "ability_use",
+      "medical_energy_consequence"
+    ],
+    "past": [
+      "flashback",
+      "remember",
+      "scar",
+      "ring_mark",
+      "samuel",
+      "bracelet",
+      "academy",
+      "1170",
+      "1198"
+    ],
+    "lore": [
+      "player_asks_world_question",
+      "npc_explains_world",
+      "location_lore_focus",
+      "plot_requires_operational_lore"
+    ]
+  },
+  "forbid_by_default": [
+    "hidden_lore",
+    "full_past_yaml",
+    "full_character_yaml",
+    "all_relationship_pairs",
+    "all_schedule_files",
+    "all_ambient_npcs"
+  ]
+}

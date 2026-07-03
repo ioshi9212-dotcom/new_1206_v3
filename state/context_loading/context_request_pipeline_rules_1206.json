@@ -1,0 +1,47 @@
+{
+  "id": "context_request_pipeline_rules_1206",
+  "version": "1206_v3_context_request_pipeline_v1",
+  "status": "planning_layer_active",
+  "purpose": "Replace one huge scene_contract with preflight -> context_request -> context_slice. Full cards remain in repo; Railway returns only scene-needed blocks.",
+  "pipeline": [
+    {
+      "step": 1,
+      "name": "preflight",
+      "description": "Return active state, current calendar beat, last scene summary, immediate constraints. No full cards."
+    },
+    {
+      "step": 2,
+      "name": "gpt_scene_planning",
+      "description": "GPT determines scene type, location focus, block needs, and sends context_request."
+    },
+    {
+      "step": 3,
+      "name": "railway_validation",
+      "description": "Railway checks calendar, schedule, location, availability, permission, and hidden/past triggers."
+    },
+    {
+      "step": 4,
+      "name": "context_slice",
+      "description": "Railway returns only approved small slices: state, location, schedule, character blocks, relationship blocks."
+    },
+    {
+      "step": 5,
+      "name": "scene_render",
+      "description": "GPT writes scene from context_slice only."
+    },
+    {
+      "step": 6,
+      "name": "apply_turn_result",
+      "description": "GPT sends proposed_updates; API validates and persists state."
+    }
+  ],
+  "hard_rules": [
+    "Do not return full YAML cards to Custom GPT Actions by default.",
+    "Do not split a huge card into chunks; request semantic blocks instead.",
+    "State active slice is always needed, but full state history is not.",
+    "Location basic slice is needed for every scene.",
+    "Schedule slice is needed for base/public/location movement scenes; schedule files may be empty placeholders until filled.",
+    "Character full cards remain authoritative in repo; context slices are derived from full cards, not from separate runtime summaries.",
+    "Railway may deny a requested block if calendar, location, knowledge, energy, or past triggers do not allow it."
+  ]
+}

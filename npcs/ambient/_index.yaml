@@ -1,0 +1,5 @@
+id: ambient_npc_index_1206
+status: placeholder_empty
+ambient_npcs: []
+notes:
+  - "Пока фоновых NPC нет. Позже добавить буфетчика, уборщиков, охрану, медблок, техников и т.д."
