@@ -46,13 +46,13 @@ def _payload(body: dict[str, Any] | None) -> dict[str, Any]:
 
 
 def _startish_input(payload: dict[str, Any]) -> str:
-    for key in ("player_input", "last_player_input", "command", "text", "message"):
+    for key in ("player_input", "user_input", "last_player_input", "command", "text", "message"):
         value = payload.get(key)
         if isinstance(value, str) and value.strip():
             return value.strip()
     current = payload.get("current_state")
     if isinstance(current, dict):
-        for key in ("last_player_input", "command", "text", "message"):
+        for key in ("last_player_input", "user_input", "command", "text", "message"):
             value = current.get(key)
             if isinstance(value, str) and value.strip():
                 return value.strip()
@@ -107,6 +107,9 @@ def health() -> dict[str, Any]:
         "public_base_url": base.BASE_URL,
         "standalone_v3": True,
         "context_pipeline": "preflight_context_request_context_slice",
+        "knowledge_boundary": "speaking_npc_always",
+        "maintenance_runtime": "turn10_recovery_turn15_cleanup",
+        "final_render_contract": "last_context_slice_block",
         "large_contract_actions_disabled": True,
     }
 
@@ -158,16 +161,28 @@ def process_turn(session_id: str, body: dict[str, Any] | None = Body(default=Non
     current_state = base.read_json("state/current_state.json", session_id=sid, default={})
     if not isinstance(current_state, dict):
         current_state = {}
-    player_input = str(payload.get("player_input") or payload.get("text") or payload.get("message") or "").strip()
+    player_input = str(payload.get("player_input") or payload.get("user_input") or payload.get("text") or payload.get("message") or "").strip()
     start_command = base.is_start_command(player_input)
 
     if start_command:
         current_state = base.initialize_start_session(sid, _merge_start_overrides(payload, player_input=player_input))
     else:
+        if not player_input:
+            return {
+                "success": False,
+                "session_id": sid,
+                "runtime_version": RUNTIME_VERSION,
+                "mode": "turn_rejected_empty_input",
+                "error": "player_input is empty; do not write a scene from stale start context.",
+                "current_frame": _current_frame_ack(current_state if isinstance(current_state, dict) else {}),
+                "next_action": "waitForPlayerInput",
+            }
         if not current_state:
             current_state = base.initialize_start_session(sid, _merge_start_overrides(payload, player_input=player_input))
-        if player_input:
-            current_state["last_player_input"] = player_input
+        if current_state.get("start_scene_exact_text_required") and not current_state.get("start_scene_completed"):
+            current_state["start_scene_completed"] = True
+            current_state["start_scene_exact_text_required"] = False
+        current_state["last_player_input"] = player_input
         for key in [
             "pov_character_id", "active_character_ids", "scene_character_ids", "present_character_ids",
             "speaking_character_ids", "addressed_character_ids", "relationship_pair_ids", "scene_goal",

@@ -22,6 +22,8 @@ CURRENT_STATE_FILE = "state/current_state.json"
 SCENE_CONTINUITY_FILE = "state/scene_continuity_state.json"
 CALENDAR_RUNTIME_FILE = "state/calendar_runtime.json"
 PHYSICAL_CONTINUITY_FILE = "state/physical_continuity_state.json"
+STORY_LINES_FILE = "state/story_lines.json"
+MAINTENANCE_RULES_FILE = "state/maintenance_rules_1206.json"
 
 ID_ALIASES = {
     "Акира": "akira", "акира": "akira", "akira": "akira",
@@ -86,6 +88,50 @@ def _write_json(path: str, data: Any, sid: str, dry_run: bool) -> bool:
         base.write_json(path, data, session_id=sid)
     return True
 
+
+
+
+def _story_lines_state(sid: str) -> dict[str, Any]:
+    state = _read_json(STORY_LINES_FILE, sid, {})
+    if not isinstance(state, dict) or not state:
+        state = {
+            "schema": "story_lines_runtime_v3",
+            "turn_counter": 0,
+            "last_state_recovery_audit_turn": 0,
+            "last_compaction_cleanup_turn": 0,
+            "maintenance": {
+                "state_recovery_audit_every": 10,
+                "compaction_cleanup_every": 15,
+                "compaction_cleanup_offset": 12
+            }
+        }
+    return state
+
+
+def _increment_turn_counter(sid: str, dry_run: bool, should_count: bool) -> dict[str, Any]:
+    state = _story_lines_state(sid)
+    if should_count:
+        state["turn_counter"] = int(state.get("turn_counter") or 0) + 1
+    turn = int(state.get("turn_counter") or 0)
+    audit_due = bool(turn and turn % 10 == 0 and state.get("last_state_recovery_audit_turn") != turn)
+    cleanup_due = bool(turn and turn % 15 == 12 and state.get("last_compaction_cleanup_turn") != turn)
+    if audit_due and cleanup_due:
+        cleanup_due = False
+    state["last_checked_at"] = datetime.utcnow().isoformat()
+    state["maintenance_due"] = {
+        "state_recovery_audit_due": audit_due,
+        "state_recovery_audit_rule": "turn_counter % 10 == 0",
+        "state_compaction_cleanup_due": cleanup_due,
+        "state_compaction_cleanup_rule": "turn_counter % 15 == 12",
+        "instruction": "If a due flag is true, the next context_slice/preflight will include deeper recent history. Write missed facts only through applyTurnResult; compact noise only, never hidden lore.",
+    }
+    if not dry_run:
+        _write_json(STORY_LINES_FILE, state, sid, False)
+    return {
+        "turn_counter": turn,
+        **state.get("maintenance_due", {}),
+        "story_lines_file": STORY_LINES_FILE,
+    }
 
 def _as_list(value: Any) -> list[Any]:
     if value is None:
@@ -203,7 +249,7 @@ def _apply_character_memory(sid: str, payload: dict[str, Any], dry_run: bool) ->
         if not isinstance(state, dict):
             state = {"character_id": cid}
         patch = item.get("patch") if isinstance(item.get("patch"), dict) else {}
-        for key in ["set", "add", "append", "memory", "notes", "knows", "does_not_know", "wrong_beliefs", "observed", "heard", "events_witnessed", "conclusions"]:
+        for key in ["set", "add", "append", "memory", "notes", "knows", "knows_as_fact", "знает_как_факт", "beliefs", "believes", "assumes", "предполагает", "does_not_know", "не_знает", "wrong_beliefs", "misbelieves", "ошибочно_считает", "observed", "seen", "видела", "видел", "heard", "слышала", "слышал", "events_witnessed", "conclusions", "learned_this_scene", "forbidden_as_fact"]:
             value = item.get(key)
             if value is not None:
                 if key in {"set", "add", "append"} and isinstance(value, dict):
@@ -332,8 +378,13 @@ def apply_turn_result_v3(session_id: str, body: dict[str, Any] | None = Body(def
     changed = list(dict.fromkeys(changed))
 
     text = _scene_text(body, payload)
-    if _append_scene_history(sid, payload, text, changed, dry_run):
+    history_appended = _append_scene_history(sid, payload, text, changed, dry_run)
+    if history_appended:
         changed.append(SCENE_HISTORY_FILE)
+
+    maintenance = _increment_turn_counter(sid, dry_run, bool(text or changed))
+    if not dry_run and bool(text or changed):
+        changed.append(STORY_LINES_FILE)
 
     status = "applied" if changed else "no_changes_detected"
     result = {
@@ -341,7 +392,8 @@ def apply_turn_result_v3(session_id: str, body: dict[str, Any] | None = Body(def
         "session_id": sid,
         "runtime_version": RUNTIME_VERSION,
         "dry_run": dry_run,
-        "changed_files": changed,
+        "changed_files": list(dict.fromkeys(changed)),
+        "maintenance": maintenance,
         "visible_scene_text": text,
         "final_scene_text": text,
         "blocked_paths": ["characters/<id>/*.yaml", "legacy monolithic dynamic memory files"],
@@ -349,13 +401,14 @@ def apply_turn_result_v3(session_id: str, body: dict[str, Any] | None = Body(def
             "Dynamic character updates are written to state/character_memory/<id>.json.",
             "Relationship updates are written to state/relationship_pairs/<pair>.json.",
             "Static character cards are never modified by applyTurnResult.",
+            "Turn counter is stored in state/story_lines.json; recovery audit is due every 10 turns and compaction cleanup every 15 turns with offset 12.",
         ],
     }
     if not dry_run:
         _write_json(LAST_APPLY_RESULT_FILE, result, sid, False)
         if LAST_APPLY_RESULT_FILE not in changed:
             changed.append(LAST_APPLY_RESULT_FILE)
-            result["changed_files"] = changed
+            result["changed_files"] = list(dict.fromkeys(changed))
     return result
 
 

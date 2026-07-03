@@ -1,0 +1,43 @@
+{
+  "id": "scene_output_contract_1206",
+  "version": "v3_final_writer_contract",
+  "purpose": "Последний блок context_slice. По нему GPT собирает финальную видимую сцену после всех state/calendar/location/character/knowledge блоков.",
+  "must_be_last_writer_instruction": true,
+  "visible_scene_must_start_with_header": true,
+  "header_template": [
+    "🌘 Восточный сектор · 1206 г., {current_date}",
+    "🕒 {current_day_phase} · 📍 {current_location_text}",
+    "⚙️ Активное состояние сцены: {current_tension_or_goal}",
+    "✦ POV: {pov_display_name} · {visible_state}",
+    "🧥 {current_outfit_if_relevant}",
+    "◈ {visible_inventory_or_nearby_items_if_relevant}",
+    "━━━━━━━━━━━━━━━━━━━━"
+  ],
+  "dialogue_format_required": "**Имя** — реплика.",
+  "unknown_name_rule": [
+    "Если POV/говорящий персонаж не знает имя собеседника, в диалоге использовать видимый дескриптор: **Беловолосая девушка** —, **Беловолосый парень** —, **Парень с пирсингом** —, **Мужчина в форме** —.",
+    "character_id, display_name, hidden voice map, calendar and relationship_pair are engine facts; они не являются источником имени для POV/NPC.",
+    "Имя можно писать только после того, как оно прозвучало в сцене, есть документ/знакомство/память конкретного персонажа или API дал source для этого персонажа."
+  ],
+  "prose_rules": [
+    "Пиши сцену в третьем лице, кинематографично и компактно.",
+    "NPC активны, но не забирают управление POV.",
+    "Не добавлять щелчок, скрип, стук или другой звук двери/пола, если контекст говорит, что дверь/пол открываются/движутся бесшумно.",
+    "Не переносить engine_state / POV-visible items в знание NPC без seen/heard/source в knowledge_boundary.",
+    "Believes/assumes are not facts. does_not_know и forbidden_as_fact нельзя произносить как знание."
+  ],
+  "bottom_blocks_order": [
+    "✦ Что можно сделать",
+    "✦ Что Акира могла бы сказать",
+    "✦ Мысли Акиры",
+    "✦ Состояние",
+    "✦ Риск",
+    "✦ Отношения"
+  ],
+  "bottom_blocks_rules": [
+    "Варианты не считаются действием, пока игрок не выбрал.",
+    "Состояние: только актуальные изменения тела, позиции, предметов, опасности.",
+    "Отношения: только если напряжение/доверие реально изменились в сцене; не перечислять всех подряд.",
+    "Если сцена короткая/напряжённая, нижний блок можно сократить, но не терять формат."
+  ]
+}

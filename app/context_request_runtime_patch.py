@@ -1,8 +1,9 @@
 """Action-safe preflight/context-request pipeline for Akira 1206 v3.
 
 The full cards stay on Railway. Custom GPT receives small semantic slices only.
-This module also replaces the old huge /scene-contract responses with a safe
-pointer so Actions stop failing with ResponseTooLargeError.
+This version restores the v2 principle of permanent + temporary knowledge:
+if an NPC can speak/answer/pressure in the scene, their knowledge boundary is
+loaded automatically. The final render contract is returned last in context_slice.
 """
 from __future__ import annotations
 
@@ -21,22 +22,39 @@ RUNTIME_VERSION = base.APP_VERSION
 CURRENT_STATE_FILE = "state/current_state.json"
 SCENE_HISTORY_FILE = "state/scene_history.json"
 CALENDAR_RUNTIME_FILE = "state/calendar_runtime.json"
+STORY_LINES_FILE = "state/story_lines.json"
+MAINTENANCE_RULES_FILE = "state/maintenance_rules_1206.json"
 START_SCENE_PATH = "scenes/start_scene.md"
+RENDER_CONTRACT_PATH = "gpt/scene_output_contract_1206.json"
 
 ID_ALIASES = {
     "акира": "akira", "akira": "akira", "кира": "akira",
     "алекс": "alex", "alex": "alex",
-    "эмма": "emma", "emma": "emma",
-    "ирэй": "irey", "ирей": "irey", "irey": "irey",
+    "эмма": "emma", "emma": "emma", "беловолосая девушка": "emma",
+    "ирэй": "irey", "ирей": "irey", "irey": "irey", "беловолосый парень": "irey",
     "джун": "jun", "jun": "jun", "jun_carter": "jun",
     "кай": "kai", "kai": "kai",
     "мики": "miki", "miki": "miki",
-    "рейден": "raiden", "рейдон": "raiden", "raiden": "raiden", "sterling": "raiden", "стерлинг": "raiden",
-    "рэй": "ray", "рей": "ray", "ray": "ray", "ray_carter": "ray",
+    "рейден": "raiden", "рейдон": "raiden", "raiden": "raiden", "sterling": "raiden", "стерлинг": "raiden", "парень с пирсингом": "raiden",
+    "рэй": "ray", "рей": "ray", "ray": "ray", "ray_carter": "ray", "мужчина в форме": "ray",
     "хару": "haru", "haru": "haru", "haru_foster": "haru",
     "широ": "shiro", "shiro": "shiro",
     "юна": "yuna", "yuna": "yuna",
 }
+
+VISIBLE_LABELS = {
+    "emma": "беловолосая девушка",
+    "irey": "беловолосый парень",
+    "raiden": "парень с пирсингом",
+    "ray": "мужчина в форме",
+    "jun": "Джун",
+    "akira": "Акира",
+}
+
+DIALOGUE_WORDS = (
+    "объяс", "говор", "скажи", "спрос", "ответ", "почему", "зачем", "кто", "что ",
+    "молчи", "треб", "слуш", "реплик", "назов", "давит", "угрож", "вопрос", "разговор",
+)
 
 
 def _remove_route(path: str, method: str | None = None) -> None:
@@ -71,9 +89,11 @@ def _compact(value: Any, *, max_chars: int = 700, max_items: int = 6, depth: int
     if isinstance(value, dict):
         result: dict[str, Any] = {}
         preferred = [
-            "id", "name", "role", "status", "current_date", "current_day_phase", "current_location_id",
-            "pov_character_id", "active_character_ids", "scene_character_ids", "relationship_pair_ids",
-            "summary", "current_beat_id", "pending_events", "rules", "last_player_input", "scene_goal",
+            "id", "character_id", "display_name", "name", "role", "status", "current_date", "current_day_phase",
+            "current_location_id", "pov_character_id", "active_character_ids", "scene_character_ids",
+            "relationship_pair_ids", "summary", "current_beat_id", "pending_events", "rules",
+            "last_player_input", "scene_goal", "knows_as_fact", "знает_как_факт", "believes", "assumes",
+            "предполагает", "does_not_know", "не_знает", "wrong_beliefs", "ошибочно_считает",
         ]
         keys = [k for k in preferred if k in value] + [k for k in value.keys() if k not in preferred]
         for key in keys[:max_items]:
@@ -103,7 +123,42 @@ def _ensure_current(sid: str) -> dict[str, Any]:
     return current
 
 
+def _story_lines(sid: str) -> dict[str, Any]:
+    data = _read_json(STORY_LINES_FILE, sid, {})
+    if not isinstance(data, dict) or not data:
+        data = {
+            "schema": "story_lines_runtime_v3",
+            "turn_counter": 0,
+            "last_state_recovery_audit_turn": 0,
+            "last_compaction_cleanup_turn": 0,
+            "maintenance": {"state_recovery_audit_every": 10, "compaction_cleanup_every": 15, "compaction_cleanup_offset": 12},
+        }
+    return data
+
+
+def _maintenance_slice(sid: str) -> dict[str, Any]:
+    story = _story_lines(sid)
+    turn = int(story.get("turn_counter") or 0)
+    rules = _read_json(MAINTENANCE_RULES_FILE, sid, {})
+    if not isinstance(rules, dict):
+        rules = {}
+    audit_due = bool(turn and turn % 10 == 0 and story.get("last_state_recovery_audit_turn") != turn)
+    compact_due = bool(turn and turn % 15 == 12 and story.get("last_compaction_cleanup_turn") != turn)
+    if audit_due and compact_due:
+        compact_due = False
+    return {
+        "turn_counter": turn,
+        "state_recovery_audit_due": audit_due,
+        "state_recovery_audit_rule": "every 10 turns: check recent scene history for missed seen/heard/learned facts; do not invent hidden lore",
+        "state_compaction_cleanup_due": compact_due,
+        "state_compaction_cleanup_rule": "every 15 turns with offset 12: compact noise only; keep knowledge sources, emotional hooks and open promises",
+        "recent_history_depth": 15 if audit_due or compact_due else 3,
+        "source_file": MAINTENANCE_RULES_FILE if rules else None,
+    }
+
+
 def _current_state_slice(current: dict[str, Any]) -> dict[str, Any]:
+    # Keep engine facts compact. NPC knowledge is supplied separately in per-character knowledge_boundary.
     return {
         "current_scene_id": current.get("current_scene_id") or current.get("scene_id"),
         "current_date": current.get("current_date") or current.get("date"),
@@ -113,14 +168,18 @@ def _current_state_slice(current: dict[str, Any]) -> dict[str, Any]:
         "pov_character_id": current.get("pov_character_id"),
         "active_character_ids": current.get("active_character_ids", []),
         "scene_character_ids": current.get("scene_character_ids", []),
+        "present_character_ids": current.get("present_character_ids", []),
+        "speaking_character_ids": current.get("speaking_character_ids", []),
+        "addressed_character_ids": current.get("addressed_character_ids", []),
         "conditional_character_ids": current.get("conditional_character_ids", []),
         "relationship_pair_ids": current.get("relationship_pair_ids", []),
-        "visible_inventory": _compact(current.get("visible_inventory", []), max_chars=400, max_items=8, depth=2),
-        "nearby_items": _compact(current.get("nearby_items", []), max_chars=400, max_items=8, depth=2),
+        "engine_visible_inventory": _compact(current.get("visible_inventory", []), max_chars=400, max_items=8, depth=2),
+        "engine_nearby_items": _compact(current.get("nearby_items", []), max_chars=400, max_items=8, depth=2),
         "scene_goal": _trim(current.get("scene_goal") or current.get("current_scene_goal"), 450),
         "last_player_input": _trim(current.get("last_player_input"), 320),
         "start_scene_exact_text_required": bool(current.get("start_scene_exact_text_required")),
         "start_scene_completed": bool(current.get("start_scene_completed")),
+        "boundary_note": "engine_visible_inventory/nearby_items are scene/POV/engine facts; NPCs may not know them unless their knowledge_boundary says so or they saw/heard them in-scene.",
     }
 
 
@@ -138,17 +197,18 @@ def _calendar_slice(sid: str, current: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _history_slice(sid: str) -> list[dict[str, Any]]:
+def _history_slice(sid: str, depth: int = 3) -> list[dict[str, Any]]:
     history = _read_json(SCENE_HISTORY_FILE, sid, [])
     if isinstance(history, dict):
         history = history.get("entries", [])
     if not isinstance(history, list):
         return []
     result = []
-    for item in history[-3:]:
+    for item in history[-depth:]:
         if isinstance(item, dict):
             result.append({
                 "scene_id": item.get("scene_id") or item.get("id"),
+                "player_input": _trim(item.get("player_input"), 180),
                 "summary": _trim(item.get("summary") or item.get("visible_scene_text") or item.get("scene_text"), 450),
                 "changed_files_snapshot": _compact(item.get("changed_files_snapshot", []), max_chars=300, max_items=4, depth=2),
             })
@@ -204,6 +264,7 @@ def _location_slice(current: dict[str, Any], scene_plan: dict[str, Any]) -> dict
         "privacy_level": privacy,
         "detail_level": scene_plan.get("location_detail") or scene_plan.get("needs", {}).get("location", "basic"),
         "default_activity": default_activity,
+        "sound_rule": "Do not add a click/creak/knock if the current scene says the door/floor opens silently.",
         "rules": [
             "Load visual details when POV enters, observes, or the location changes.",
             "Load location rules only if conflict/noise/security/access matters.",
@@ -218,38 +279,52 @@ def _canonical_id(value: Any) -> str:
     return ID_ALIASES.get(key, key)
 
 
-def _collect_requested_character_ids(payload: dict[str, Any], current: dict[str, Any]) -> list[str]:
+def _add_id(ids: list[str], value: Any) -> None:
+    if isinstance(value, str):
+        cid = _canonical_id(value)
+        if cid and cid not in ids and cid not in {"none", "null", "unknown"}:
+            ids.append(cid)
+    elif isinstance(value, list):
+        for x in value:
+            _add_id(ids, x)
+    elif isinstance(value, dict):
+        for k, item in value.items():
+            if isinstance(item, dict):
+                _add_id(ids, item.get("id") or item.get("character_id") or k)
+            else:
+                _add_id(ids, k)
+
+
+def _scene_is_dialogue_or_pressure(player_input: str, scene_plan: dict[str, Any]) -> bool:
+    text = (player_input or "").lower().replace("ё", "е")
+    scene_type = str(scene_plan.get("scene_type") or scene_plan.get("type") or "").lower()
+    if any(x in scene_type for x in ["dialog", "conversation", "talk", "разговор", "conflict", "pressure", "interrogation", "question"]):
+        return True
+    return any(w in text for w in DIALOGUE_WORDS)
+
+
+def _collect_requested_character_ids(payload: dict[str, Any], current: dict[str, Any], player_input: str = "", scene_plan: dict[str, Any] | None = None) -> list[str]:
+    scene_plan = scene_plan or {}
     ids: list[str] = []
-    def add(v: Any) -> None:
-        if isinstance(v, str):
-            cid = _canonical_id(v)
-            if cid and cid not in ids:
-                ids.append(cid)
-        elif isinstance(v, list):
-            for x in v:
-                add(x)
-        elif isinstance(v, dict):
-            for k, item in v.items():
-                if isinstance(item, dict):
-                    add(item.get("id") or item.get("character_id") or k)
-                else:
-                    add(k)
-    for key in ["character_requests", "characters", "requested_characters", "character_ids"]:
-        add(payload.get(key))
-    scene_plan = payload.get("scene_plan") if isinstance(payload.get("scene_plan"), dict) else {}
-    for key in ["character_requests", "characters", "requested_characters", "character_ids"]:
-        add(scene_plan.get(key))
-    # For exact first scene, only return identities for explicitly selected scene chars, not full behavior.
+    for key in ["character_requests", "characters", "requested_characters", "character_ids", "speaking_character_ids", "addressed_character_ids"]:
+        _add_id(ids, payload.get(key))
+        _add_id(ids, scene_plan.get(key))
+    # Always include explicit current speaking/addressed characters.
+    for key in ["speaking_character_ids", "addressed_character_ids", "looked_at_character_ids"]:
+        _add_id(ids, current.get(key))
+    # For exact first scene, only return reference identities. The exact text wins.
     if not ids and current.get("start_scene_exact_text_required") and not current.get("start_scene_completed"):
-        for cid in current.get("scene_character_ids", [])[:4]:
-            add(cid)
+        _add_id(ids, current.get("scene_character_ids", [])[:4])
+    # For dialogue/pressure after start, include active scene characters so knowledge boundaries are available.
+    if (not ids or _scene_is_dialogue_or_pressure(player_input, scene_plan)) and not (current.get("start_scene_exact_text_required") and not current.get("start_scene_completed")):
+        _add_id(ids, current.get("scene_character_ids") or current.get("active_character_ids") or [])
     return ids[:8]
 
 
 def _grep_lines(text: str, patterns: list[str], *, max_lines: int = 10, max_chars: int = 900) -> str:
     lines = []
     for line in text.splitlines():
-        low = line.lower()
+        low = line.lower().replace("ё", "е")
         if any(p in low for p in patterns):
             clean = line.strip()
             if clean and clean not in lines:
@@ -259,24 +334,108 @@ def _grep_lines(text: str, patterns: list[str], *, max_lines: int = 10, max_char
     return _trim("\n".join(lines), max_chars)
 
 
-def _character_slice(sid: str, cid: str, request: Any, current: dict[str, Any]) -> dict[str, Any]:
+def _list_from_memory(memory: dict[str, Any], *keys: str) -> list[Any]:
+    result: list[Any] = []
+    for key in keys:
+        value = memory.get(key)
+        if isinstance(value, list):
+            result.extend(value)
+        elif isinstance(value, dict):
+            # common nested dynamic schema
+            for nested_key in keys:
+                nv = value.get(nested_key)
+                if isinstance(nv, list):
+                    result.extend(nv)
+        elif value:
+            result.append(value)
+    nested = memory.get("memory")
+    if isinstance(nested, dict):
+        for key in keys:
+            value = nested.get(key)
+            if isinstance(value, list):
+                result.extend(value)
+            elif value:
+                result.append(value)
+    # de-dupe by string representation
+    out: list[Any] = []
+    seen: set[str] = set()
+    for item in result:
+        key = json.dumps(item, ensure_ascii=False, sort_keys=True) if isinstance(item, (dict, list)) else str(item)
+        if key and key not in seen:
+            seen.add(key)
+            out.append(item)
+    return out
+
+
+def _temporary_knowledge_boundary(cid: str, knowledge_text: str, memory: dict[str, Any], presence: str) -> dict[str, Any]:
+    knows = _list_from_memory(memory, "knows_as_fact", "знает_как_факт", "knows", "known", "known_facts")
+    believes = _list_from_memory(memory, "beliefs", "believes", "assumes", "предполагает", "suspects")
+    wrong = _list_from_memory(memory, "wrong_beliefs", "misbelieves", "mistaken_beliefs", "ошибочно_считает", "wrongly_believes")
+    does_not = _list_from_memory(memory, "does_not_know", "не_знает", "unknown", "knowledge_limits")
+    saw = _list_from_memory(memory, "seen", "saw", "видела", "видел", "observed")
+    heard = _list_from_memory(memory, "heard", "слышала", "слышал")
+    static_unknown = _grep_lines(knowledge_text, ["не знает", "не зна", "unknown", "does_not_know", "нельзя", "forbidden"], max_lines=8, max_chars=900)
+    static_known = _grep_lines(knowledge_text, ["знает", "known", "own knowledge", "видел", "слышал"], max_lines=8, max_chars=900)
+    forbidden = list(does_not)
+    if cid in {"emma", "irey"}:
+        forbidden += [
+            "Рэй / Восточный сектор как факт без того, что персонаж увидел записку или услышал это вслух",
+            "документы Акацуми как факт без прямого наблюдения",
+            "амнезия Акиры как факт до наблюдения/источника",
+            "связь Джуна и Акиры как факт до источника",
+        ]
+    if cid == "jun":
+        forbidden += [
+            "имя Эммы как факт до представления/источника",
+            "имя Ирэя как факт до представления/источника",
+            "точные цели пришедших как факт до источника",
+        ]
+    return {
+        "source_files": [f"characters/{cid}/knowledge.yaml", f"state/character_memory/{cid}.json"],
+        "load_reason": "speaking/answering/pressure NPC requires knowledge boundary" if presence == "speaking" else f"presence={presence}",
+        "can_say_as_fact": _compact(knows, max_chars=800, max_items=8, depth=2),
+        "static_known_hints": static_known,
+        "believes_or_assumes": _compact(believes, max_chars=900, max_items=8, depth=2),
+        "wrong_beliefs": _compact(wrong, max_chars=700, max_items=6, depth=2),
+        "does_not_know": _compact(does_not, max_chars=1000, max_items=10, depth=2),
+        "static_unknown_hints": static_unknown,
+        "seen_by_this_character": _compact(saw, max_chars=700, max_items=6, depth=2),
+        "heard_by_this_character": _compact(heard, max_chars=700, max_items=6, depth=2),
+        "forbidden_as_fact": _compact(forbidden, max_chars=1200, max_items=12, depth=2),
+        "rule": "Before any NPC line, use can_say_as_fact/seen/heard only. Engine state, POV inventory, calendar and other character cards are not this NPC's knowledge.",
+    }
+
+
+def _character_slice(sid: str, cid: str, request: Any, current: dict[str, Any], player_input: str = "", scene_plan: dict[str, Any] | None = None) -> dict[str, Any]:
     if not cid:
         return {}
+    scene_plan = scene_plan or {}
     main_path = f"characters/{cid}/main.yaml"
     char_path = f"characters/{cid}/character.yaml"
     know_path = f"characters/{cid}/knowledge.yaml"
     mem_path = f"state/character_memory/{cid}.json"
     main = _read_text(main_path, sid)
     char = _read_text(char_path, sid)
+    knowledge = _read_text(know_path, sid)
     memory = _read_json(mem_path, sid, {})
+    if not isinstance(memory, dict):
+        memory = {}
     req = request if isinstance(request, dict) else {}
-    presence = req.get("presence_level") or req.get("level") or "background_visible"
     needs = req.get("needs") if isinstance(req.get("needs"), dict) else {}
+    presence = req.get("presence_level") or req.get("level") or "background_visible"
+    current_speaking = [_canonical_id(x) for x in (current.get("speaking_character_ids") or [])]
+    current_addressed = [_canonical_id(x) for x in (current.get("addressed_character_ids") or [])]
+    dialogue_scene = _scene_is_dialogue_or_pressure(player_input, scene_plan)
+    if cid in current_speaking or needs.get("speech") or needs.get("voice"):
+        presence = "speaking"
+    elif cid in current_addressed or (dialogue_scene and cid != current.get("pov_character_id") and cid in [_canonical_id(x) for x in current.get("scene_character_ids", [])]):
+        presence = "speaking"
     # Start scene exact text means the writer should use exact text, not character depth.
     if current.get("start_scene_exact_text_required") and not current.get("start_scene_completed"):
         presence = "start_scene_reference_only"
     result: dict[str, Any] = {
         "id": cid,
+        "visible_label_default": VISIBLE_LABELS.get(cid, cid),
         "presence_level": presence,
         "source_files": {"main": main_path, "character": char_path, "knowledge": know_path, "memory": mem_path},
         "identity_basic": _grep_lines(main, ["name", "имя", "age", "возраст", "role", "роль", "height", "рост"], max_lines=10, max_chars=900),
@@ -284,11 +443,13 @@ def _character_slice(sid: str, cid: str, request: Any, current: dict[str, Any]) 
     }
     if presence in {"speaking", "emotionally_relevant", "combat_or_energy"} or needs.get("voice") or needs.get("behavior"):
         result["voice_and_behavior"] = _grep_lines(char, ["voice", "speech", "style", "характер", "поведен", "голос", "речь", "habit"], max_lines=14, max_chars=1400)
+    # Key change: speaking NPC always receives knowledge + memory boundary.
     if presence in {"speaking", "emotionally_relevant"} or needs.get("knowledge"):
-        knowledge = _read_text(know_path, sid)
-        result["knowledge_relevant_guard"] = _grep_lines(knowledge, ["known", "unknown", "зна", "не зна", "must", "forbid", "нельзя"], max_lines=12, max_chars=1300)
-    if presence in {"emotionally_relevant"} or needs.get("memory"):
-        result["memory_relevant"] = _compact(memory, max_chars=1200, max_items=8, depth=2)
+        result["knowledge_relevant_guard"] = _grep_lines(knowledge, ["known", "unknown", "зна", "не зна", "must", "forbid", "нельзя"], max_lines=16, max_chars=1700)
+        result["temporary_knowledge_state"] = _compact(memory, max_chars=1600, max_items=10, depth=2)
+        result["knowledge_boundary"] = _temporary_knowledge_boundary(cid, knowledge, memory, "speaking" if presence == "speaking" else presence)
+    elif needs.get("memory"):
+        result["temporary_knowledge_state"] = _compact(memory, max_chars=1200, max_items=8, depth=2)
     if presence in {"combat_or_energy"} or needs.get("energy") or needs.get("combat"):
         result["energy_or_combat_hint"] = _grep_lines(char, ["energy", "энерг", "combat", "бой", "overload", "перегруз", "weak", "слаб"], max_lines=14, max_chars=1400)
     result["blocked_by_default"] = {
@@ -301,20 +462,18 @@ def _character_slice(sid: str, cid: str, request: Any, current: dict[str, Any]) 
 def _relationship_slices(sid: str, payload: dict[str, Any], current: dict[str, Any]) -> dict[str, Any]:
     scene_plan = payload.get("scene_plan") if isinstance(payload.get("scene_plan"), dict) else {}
     rel_need = scene_plan.get("relationships") or scene_plan.get("needs", {}).get("relationships") or payload.get("relationships")
-    if rel_need in [False, "false", "none", "no", None]:
+    if rel_need in [False, "false", "none", "no"]:
         return {}
-    pair_ids = payload.get("relationship_pair_ids") or scene_plan.get("relationship_pair_ids") or []
-    if not pair_ids and rel_need in ["surface_only", "only_if_contact"]:
-        pair_ids = current.get("relationship_pair_ids", [])[:3]
+    pair_ids = payload.get("relationship_pair_ids") or scene_plan.get("relationship_pair_ids") or current.get("relationship_pair_ids", [])[:6]
     result: dict[str, Any] = {}
-    for pair in pair_ids[:4]:
+    for pair in pair_ids[:6]:
         pid = str(pair or "").strip()
         if "__" not in pid:
             continue
         path = f"state/relationship_pairs/{pid}.json"
         data = _read_json(path, sid, {})
         if isinstance(data, dict) and data:
-            result[pid] = {"source_file": path, "surface_slice": _compact(data, max_chars=1000, max_items=8, depth=2)}
+            result[pid] = {"source_file": path, "surface_slice": _compact(data, max_chars=1100, max_items=10, depth=2)}
     return result
 
 
@@ -326,14 +485,29 @@ def _extract_start_scene_text() -> str:
     return text.strip()
 
 
+def _render_contract() -> dict[str, Any]:
+    data = _read_json(RENDER_CONTRACT_PATH, "default", {})
+    if not isinstance(data, dict) or not data:
+        return {
+            "source_file": RENDER_CONTRACT_PATH,
+            "must_be_last_writer_instruction": True,
+            "required_header": "🌘 Восточный сектор · 1206 г., {date}\n🕒 {phase} · 📍 {location}\n⚙️ Активное состояние сцены: {tension}\n✦ POV: {pov} · {visible_state}\n🧥 {outfit}\n◈ {items}\n━━━━━━━━━━━━━━━━━━━━",
+            "dialogue_format_required": "**Имя** — реплика.",
+            "bottom_blocks": ["Что можно сделать", "Что Акира могла бы сказать", "Мысли Акиры", "Состояние", "Риск/Отношения по факту"],
+        }
+    data.setdefault("source_file", RENDER_CONTRACT_PATH)
+    data["must_be_last_writer_instruction"] = True
+    return data
+
+
 def _context_rules() -> dict[str, Any]:
     return {
         "state": "always include active current_state slice",
         "location": "basic always; visual/rules/lore only if requested by scene_plan",
         "schedule": "check schedule files; if placeholder_empty, do not invent availability",
         "characters": "return block slices by presence level, never full YAML dumps",
-        "relationships": "surface only unless direct interaction/emotional conflict",
-        "knowledge": "only for speaking/decision/secret/reaction scenes",
+        "speaking_npc_knowledge": "if an NPC speaks/answers/pressures, include knowledge.yaml + character_memory boundary automatically",
+        "relationships": "surface pairs included when relationship_pair_ids exist unless explicitly disabled",
         "energy": "only combat, training, overload, lecture, or explicit energy trigger",
         "past": "only hard past trigger; never because of ordinary start words",
     }
@@ -343,6 +517,7 @@ def _context_rules() -> dict[str, Any]:
 def get_preflight(session_id: str) -> dict[str, Any]:
     sid = _sid(session_id)
     current = _ensure_current(sid)
+    maintenance = _maintenance_slice(sid)
     return {
         "success": True,
         "session_id": sid,
@@ -350,13 +525,14 @@ def get_preflight(session_id: str) -> dict[str, Any]:
         "mode": "v3_preflight_light",
         "current_state": _current_state_slice(current),
         "calendar": _calendar_slice(sid, current),
-        "recent_scene_history": _history_slice(sid),
+        "recent_scene_history": _history_slice(sid, int(maintenance.get("recent_history_depth") or 3)),
         "schedule_status": _schedule_status(),
+        "maintenance": maintenance,
         "next_action": "requestContextSlice",
         "planner_checklist": [
             "determine scene_type before requesting context blocks",
-            "request location depth, schedule check, visible/background characters, and only necessary character blocks",
-            "do not request energy/knowledge/past/lore unless the player input or scene type needs it",
+            "if any NPC may speak, mark them speaking or let dialogue-scene auto-load knowledge boundary",
+            "do not use engine_visible_inventory as NPC knowledge without seen/heard source",
         ],
     }
 
@@ -367,27 +543,37 @@ def request_context_slice(session_id: str, body: dict[str, Any] | None = Body(de
     current = _ensure_current(sid)
     payload = _payload(body)
     scene_plan = payload.get("scene_plan") if isinstance(payload.get("scene_plan"), dict) else {}
-    player_input = _trim(payload.get("player_input") or scene_plan.get("player_input") or current.get("last_player_input"), 400)
+    player_input = _trim(payload.get("player_input") or payload.get("user_input") or scene_plan.get("player_input") or scene_plan.get("user_input") or current.get("last_player_input"), 400)
     char_requests = payload.get("character_requests") or scene_plan.get("character_requests") or scene_plan.get("characters") or payload.get("characters") or {}
     if not isinstance(char_requests, dict):
         char_requests = {}
-    cids = _collect_requested_character_ids(payload, current)
+    cids = _collect_requested_character_ids(payload, current, player_input, scene_plan)
     character_slices = {}
     for cid in cids:
-        character_slices[cid] = _character_slice(sid, cid, char_requests.get(cid, {}), current)
+        character_slices[cid] = _character_slice(sid, cid, char_requests.get(cid, {}), current, player_input, scene_plan)
     start_scene_available = bool(current.get("start_scene_exact_text_required") and not current.get("start_scene_completed"))
+    maintenance = _maintenance_slice(sid)
+    input_warning = None
+    if not (payload.get("player_input") or payload.get("user_input") or scene_plan.get("player_input") or scene_plan.get("user_input")) and not start_scene_available:
+        input_warning = "requestContextSlice used current_state.last_player_input because no explicit player_input/user_input was provided; ordinary turns should pass the exact player input."
     return {
         "success": True,
         "session_id": sid,
         "runtime_version": RUNTIME_VERSION,
         "mode": "v3_context_slice_light",
         "player_input": player_input,
+        "input_consistency": {
+            "explicit_input_received": bool(payload.get("player_input") or payload.get("user_input") or scene_plan.get("player_input") or scene_plan.get("user_input")),
+            "warning": input_warning,
+        },
         "scene_plan_echo": _compact(scene_plan, max_chars=900, max_items=8, depth=3),
         "context_slice": {
             "current_state": _current_state_slice(current),
             "calendar": _calendar_slice(sid, current),
             "location": _location_slice(current, scene_plan),
             "schedule": _schedule_status(),
+            "maintenance": maintenance,
+            "recent_scene_history": _history_slice(sid, int(maintenance.get("recent_history_depth") or 3)),
             "characters": character_slices,
             "relationships": _relationship_slices(sid, payload, current),
             "ambient_npcs": {
@@ -406,6 +592,14 @@ def request_context_slice(session_id: str, body: dict[str, Any] | None = Body(de
                 "full_character_yaml": "blocked for Actions; use semantic slices only",
             },
             "rules": _context_rules(),
+            # Keep this near the end so the writer sees knowledge boundaries after facts.
+            "knowledge_boundary_contract": {
+                "rule": "NPC dialogue must use only that NPC's can_say_as_fact/seen/heard. Beliefs are not facts; does_not_know/forbidden_as_fact cannot be stated as knowledge.",
+                "engine_state_is_not_npc_knowledge": True,
+                "unknown_names_use_visible_labels": VISIBLE_LABELS,
+            },
+            # Must remain the last writer-facing instruction inside context_slice.
+            "final_render_contract": _render_contract(),
         },
         "next_action": "writeScene" if not start_scene_available else "getStartSceneText",
     }
@@ -414,7 +608,6 @@ def request_context_slice(session_id: str, body: dict[str, Any] | None = Body(de
 @app.post("/api/v3/sessions/{session_id}/context-more", operation_id="requestMoreContext")
 def request_more_context(session_id: str, body: dict[str, Any] | None = Body(default=None)) -> dict[str, Any]:
     payload = _payload(body)
-    # Same endpoint shape for now: the caller asks for one extra block/character.
     return request_context_slice(session_id, payload)
 
 
@@ -430,12 +623,10 @@ def get_start_scene_text(session_id: str) -> dict[str, Any]:
         "mode": "v3_start_scene_text",
         "exact_text_required": required,
         "exact_text": _extract_start_scene_text() if required else "",
-        "after_output_instruction": "After outputting exact_text, call applyTurnResult with start_scene_completed=true if the user continues.",
+        "after_output_instruction": "After outputting exact_text, wait for the player. On the next player input, call processTurn; processTurn will mark start_scene_completed.",
     }
 
 
-# Replace old huge v2 contract routes with action-safe pointers. Keep paths for
-# backwards compatibility, but do not return full character YAML.
 _remove_route("/api/v2/sessions/{session_id}/scene-contract", "GET")
 _remove_route("/api/v2/sessions/{session_id}/turn-packet", "GET")
 _remove_route("/api/v2/sessions/{session_id}/debug/context-audit", "GET")
@@ -477,6 +668,7 @@ def get_context_audit_action_safe(session_id: str) -> dict[str, Any]:
         "preflight_endpoint": f"/api/v3/sessions/{sid}/preflight",
         "context_request_endpoint": f"/api/v3/sessions/{sid}/context-request",
         "schedule_status": _schedule_status(),
+        "maintenance": _maintenance_slice(sid),
     }
 
 

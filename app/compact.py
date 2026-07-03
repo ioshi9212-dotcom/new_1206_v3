@@ -15,7 +15,7 @@ from typing import Any
 from fastapi import FastAPI
 
 APP_NAME = "akira-1206-v3"
-APP_VERSION = "0.3.187-v3-openapi-actions-schema-fix"
+APP_VERSION = "0.3.189-v3-knowledge-maintenance-render"
 BASE_URL = os.getenv("PUBLIC_BASE_URL") or os.getenv("RAILWAY_PUBLIC_DOMAIN") or "http://localhost:8000"
 if BASE_URL and not BASE_URL.startswith(("http://", "https://")):
     BASE_URL = "https://" + BASE_URL
@@ -203,7 +203,7 @@ def default_current_state(session_id: str, overrides: dict[str, Any] | None = No
         "scene_character_ids": ["akira", "jun", "irey", "emma"],
         "present_character_ids": ["akira", "jun", "irey", "emma"],
         "conditional_character_ids": ["raiden", "ray"],
-        "relationship_pair_ids": ["akira__jun", "akira__irey", "akira__emma"],
+        "relationship_pair_ids": ["akira__jun", "akira__irey", "akira__emma", "jun__irey", "jun__emma"],
         "current_outfit": "серая пижама — футболка и шорты; босиком",
         "visible_inventory": ["записка: Рэй / Восточный сектор"],
         "nearby_items": ["дверь", "окно", "стол", "записка", "документы"],
@@ -266,4 +266,15 @@ def initialize_start_session(session_id: str | None, overrides: dict[str, Any] |
     existing_history = read_json("state/scene_history.json", session_id=sid, default=None)
     if not isinstance(existing_history, list):
         write_json("state/scene_history.json", [], session_id=sid)
+    write_json("state/story_lines.json", {
+        "schema": "story_lines_runtime_v3",
+        "turn_counter": 0,
+        "last_state_recovery_audit_turn": 0,
+        "last_compaction_cleanup_turn": 0,
+        "maintenance": {
+            "state_recovery_audit_every": 10,
+            "compaction_cleanup_every": 15,
+            "compaction_cleanup_offset": 12
+        }
+    }, session_id=sid)
     return current

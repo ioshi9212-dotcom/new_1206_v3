@@ -61,6 +61,33 @@
           "items": {
             "type": "string"
           }
+        },
+        "maintenance": {
+          "type": "object"
+        },
+        "recent_scene_history": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        },
+        "knowledge_boundary_contract": {
+          "type": "object"
+        },
+        "final_render_contract": {
+          "type": "object"
+        },
+        "characters": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object"
+          }
+        },
+        "relationships": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object"
+          }
         }
       },
       "additionalProperties": true
