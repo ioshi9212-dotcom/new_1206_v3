@@ -15,7 +15,7 @@ from typing import Any
 from fastapi import FastAPI
 
 APP_NAME = "akira-1206-v3"
-APP_VERSION = "0.3.183-v3-start-session-state"
+APP_VERSION = "0.3.186-v3-preflight-context-slice"
 BASE_URL = os.getenv("PUBLIC_BASE_URL") or os.getenv("RAILWAY_PUBLIC_DOMAIN") or "http://localhost:8000"
 if BASE_URL and not BASE_URL.startswith(("http://", "https://")):
     BASE_URL = "https://" + BASE_URL
@@ -24,7 +24,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 DATA_DIR = Path(os.getenv("DATA_DIR", str(REPO_ROOT / ".data"))).resolve()
 SESSIONS_DIR = DATA_DIR / "sessions"
 
-SYNC_FROM_REPO: list[str] = ["api_contracts", "calendar", "canon_lore", "characters", "gpt", "state", "scenes"]
+SYNC_FROM_REPO: list[str] = ["api_contracts", "calendar", "canon_lore", "characters", "gpt", "state", "scenes", "schedule", "npcs"]
 
 START_COMMANDS = {"начнем", "начнём", "начинай", "начать", "старт", "start", "begin"}
 
