@@ -1,0 +1,11 @@
+{
+  "schema": "story_lines_runtime_v3",
+  "turn_counter": 0,
+  "last_state_recovery_audit_turn": 0,
+  "last_compaction_cleanup_turn": 0,
+  "maintenance": {
+    "state_recovery_audit_every": 10,
+    "compaction_cleanup_every": 15,
+    "compaction_cleanup_offset": 12
+  }
+}
