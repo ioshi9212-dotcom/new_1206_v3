@@ -3,6 +3,9 @@
 This version is action-safe: Custom GPT Actions must not receive huge full-card
 scene contracts. The API now exposes a small preflight -> context_request ->
 context_slice pipeline. Full cards remain on Railway and are sliced by blocks.
+
+0.3.190 exposes explicit requestBody properties in the custom OpenAPI schema so
+Custom GPT Actions can pass player_input, scene_plan, and proposed_updates.
 """
 from __future__ import annotations
 
@@ -208,6 +211,85 @@ def process_turn(session_id: str, body: dict[str, Any] | None = Body(default=Non
 
 def openapi_actions() -> dict[str, Any]:
     object_any = {"type": "object", "properties": {}, "additionalProperties": True}
+
+    start_body_schema = _object_schema({
+        "player_input": {"type": "string", "description": "Start command, usually 'начнем'/'запускай'."},
+        "user_input": {"type": "string", "description": "Alias for player_input."},
+        "reset": {"type": "boolean", "description": "When true, reset/start a fresh session state."},
+        "current_state": object_any,
+    })
+    create_session_body_schema = _object_schema({
+        "session_id": {"type": "string", "description": "Optional preferred session id."},
+        "player_input": {"type": "string", "description": "Optional start command or initial text."},
+        "user_input": {"type": "string", "description": "Alias for player_input."},
+        "reset": {"type": "boolean"},
+        "current_state": object_any,
+    })
+    process_turn_body_schema = _object_schema({
+        "player_input": {"type": "string", "description": "Exact latest player message/action/reply. Required for normal turns after the start scene."},
+        "user_input": {"type": "string", "description": "Alias for player_input."},
+        "text": {"type": "string", "description": "Alias for player_input."},
+        "message": {"type": "string", "description": "Alias for player_input."},
+        "current_location_id": {"type": "string"},
+        "current_location_text": {"type": "string"},
+        "current_scene_id": {"type": "string"},
+        "current_date": {"type": "string"},
+        "current_day_phase": {"type": "string"},
+        "pov_character_id": {"type": "string"},
+        "active_character_ids": _array_string(),
+        "scene_character_ids": _array_string(),
+        "present_character_ids": _array_string(),
+        "speaking_character_ids": _array_string(),
+        "addressed_character_ids": _array_string(),
+        "relationship_pair_ids": _array_string(),
+        "scene_goal": {"type": "string"},
+    }, required=["player_input"])
+    scene_plan_schema = _object_schema({
+        "scene_type": {"type": "string"},
+        "player_input": {"type": "string"},
+        "user_input": {"type": "string"},
+        "location_depth": _array_string(),
+        "speaking_characters": _array_string(),
+        "addressed_characters": _array_string(),
+        "present_characters": _array_string(),
+        "required_blocks": object_any,
+        "character_requests": object_any,
+        "knowledge_boundary_required": {"type": "boolean"},
+        "needs": object_any,
+    })
+    context_request_body_schema = _object_schema({
+        "player_input": {"type": "string", "description": "Exact latest player message/action/reply; do not rely on old start input."},
+        "user_input": {"type": "string", "description": "Alias for player_input."},
+        "scene_plan": scene_plan_schema,
+        "character_requests": object_any,
+        "characters": object_any,
+        "needs": object_any,
+    })
+    context_more_body_schema = _object_schema({
+        "player_input": {"type": "string"},
+        "user_input": {"type": "string"},
+        "scene_plan": scene_plan_schema,
+        "character_requests": object_any,
+        "requested_blocks": object_any,
+        "reason": {"type": "string"},
+    })
+    apply_body_schema = _object_schema({
+        "visible_scene_text": {"type": "string", "description": "Final scene text shown to the user."},
+        "final_scene_text": {"type": "string", "description": "Alias/final scene text."},
+        "scene_text": {"type": "string", "description": "Alias/final scene text."},
+        "proposed_updates": object_any,
+        "current_state_patch": object_any,
+        "current_state_changes": object_any,
+        "current_state": object_any,
+        "state_changes": object_any,
+        "scene_continuity_patch": object_any,
+        "calendar_runtime_patch": object_any,
+        "physical_continuity_patch": object_any,
+        "character_memory_updates": object_any,
+        "relationship_updates": object_any,
+        "relationship_pair_updates": object_any,
+        "dry_run": {"type": "boolean"},
+    })
     return {
         "openapi": "3.1.0",
         "info": {
@@ -228,7 +310,7 @@ def openapi_actions() -> dict[str, Any]:
                 "post": {
                     "operationId": "startSession",
                     "summary": "Start a fresh 1206 v3 session; returns only a light ack.",
-                    "requestBody": {"required": False, "content": {"application/json": {"schema": object_any}}},
+                    "requestBody": {"required": False, "content": {"application/json": {"schema": start_body_schema}}},
                     "responses": {"200": _response("Light session ack")},
                 }
             },
@@ -236,7 +318,7 @@ def openapi_actions() -> dict[str, Any]:
                 "post": {
                     "operationId": "createSession",
                     "summary": "Create or ensure a session; returns only a light ack.",
-                    "requestBody": {"required": False, "content": {"application/json": {"schema": object_any}}},
+                    "requestBody": {"required": False, "content": {"application/json": {"schema": create_session_body_schema}}},
                     "responses": {"200": _response("Light session ack")},
                 }
             },
@@ -253,7 +335,7 @@ def openapi_actions() -> dict[str, Any]:
                     "operationId": "requestContextSlice",
                     "summary": "Ask Railway for only the semantic blocks needed for the next scene.",
                     "parameters": [_session_path_param()],
-                    "requestBody": {"required": False, "content": {"application/json": {"schema": object_any}}},
+                    "requestBody": {"required": False, "content": {"application/json": {"schema": context_request_body_schema}}},
                     "responses": {"200": _response("Context slice")},
                 }
             },
@@ -262,7 +344,7 @@ def openapi_actions() -> dict[str, Any]:
                     "operationId": "requestMoreContext",
                     "summary": "Ask for one additional approved context block if the scene deepens.",
                     "parameters": [_session_path_param()],
-                    "requestBody": {"required": False, "content": {"application/json": {"schema": object_any}}},
+                    "requestBody": {"required": False, "content": {"application/json": {"schema": context_more_body_schema}}},
                     "responses": {"200": _response("Additional context slice")},
                 }
             },
@@ -279,7 +361,7 @@ def openapi_actions() -> dict[str, Any]:
                     "operationId": "processTurn",
                     "summary": "Store player input/current-state overrides; returns a light ack, not a full contract.",
                     "parameters": [_session_path_param()],
-                    "requestBody": {"required": False, "content": {"application/json": {"schema": object_any}}},
+                    "requestBody": {"required": True, "content": {"application/json": {"schema": process_turn_body_schema}}},
                     "responses": {"200": _response("Light turn ack")},
                 }
             },
@@ -288,7 +370,7 @@ def openapi_actions() -> dict[str, Any]:
                     "operationId": "applyTurnResult",
                     "summary": "Apply proposed_updates after a scene.",
                     "parameters": [_session_path_param()],
-                    "requestBody": {"required": False, "content": {"application/json": {"schema": object_any}}},
+                    "requestBody": {"required": False, "content": {"application/json": {"schema": apply_body_schema}}},
                     "responses": {"200": _response("Apply result")},
                 }
             },
