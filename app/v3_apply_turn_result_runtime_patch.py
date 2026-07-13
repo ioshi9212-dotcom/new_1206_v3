@@ -16,6 +16,7 @@ from fastapi import Body
 
 from app import compact as base
 from app import scene_validation
+from app import session_recovery
 
 app = base.app
 RUNTIME_VERSION = base.APP_VERSION
@@ -1912,6 +1913,7 @@ def apply_turn_result_v3(session_id: str, body: dict[str, Any] | None = Body(def
             }
 
         applied_at = datetime.utcnow().isoformat()
+        rollback_snapshot_file = session_recovery.snapshot_file(new_revision, turn_id)
         result = {
             "success": True,
             "status": "applied",
@@ -1928,6 +1930,8 @@ def apply_turn_result_v3(session_id: str, body: dict[str, Any] | None = Body(def
             "visible_scene_output_allowed": True,
             "display_instruction": "State is committed. Show visible_scene_text now; do not expose proposed_updates or internal JSON.",
             "next_action": "waitForPlayerInput",
+            "rollback_available": True,
+            "rollback_snapshot_file": rollback_snapshot_file,
             "state_update_summary": {
                 "character_memory_files": len(memory_changed),
                 "relationship_pair_files": len(relationship_changed),
@@ -1948,19 +1952,6 @@ def apply_turn_result_v3(session_id: str, body: dict[str, Any] | None = Body(def
             "State and scene validation passed. Show visible_scene_text only; "
             "hide validation and internal JSON."
         )
-        audit_result = {
-            **result,
-            "changed_files": changed,
-            "maintenance": maintenance,
-            "character_state_audit": {
-                "memory_events": memory_audit,
-                "relationship_events": relationship_audit,
-                "source_rule": "Facts require in-world evidence; calendar/prompt/runtime/hidden lore are blocked; writes are limited to snapshot-loaded characters and pairs.",
-            },
-            "time_and_autonomy_audit": time_autonomy_audit,
-            "blocked_paths": ["characters/<id>/*.yaml", "legacy monolithic dynamic memory files"],
-            "audit_note": "Internal audit record. Never render this file or its metadata as scene output.",
-        }
         final_runtime = dict(runtime)
         final_runtime["state_revision"] = new_revision
         final_runtime["pending_turn"] = None
@@ -1971,7 +1962,16 @@ def apply_turn_result_v3(session_id: str, body: dict[str, Any] | None = Body(def
             "state_revision": new_revision,
             "payload_sha256": digest,
             "applied_at": applied_at,
+            "rollback_snapshot_file": rollback_snapshot_file,
             "result": result,
+        }
+        final_runtime["last_state_transition"] = {
+            "kind": "apply",
+            "turn_id": turn_id,
+            "base_revision": current_revision,
+            "state_revision": new_revision,
+            "created_at": applied_at,
+            "snapshot_file": rollback_snapshot_file,
         }
         final_runtime["updated_at"] = applied_at
         writes[base.CONTEXT_SNAPSHOT_FILE] = {
@@ -1990,13 +1990,81 @@ def apply_turn_result_v3(session_id: str, body: dict[str, Any] | None = Body(def
             "applied_at": applied_at,
         }
         writes[base.TURN_RUNTIME_FILE] = final_runtime
+        changed.extend([
+            base.CONTEXT_SNAPSHOT_FILE,
+            base.TURN_RUNTIME_FILE,
+            LAST_APPLY_RESULT_FILE,
+            session_recovery.CHANGE_JOURNAL_FILE,
+            rollback_snapshot_file,
+        ])
+        changed = list(dict.fromkeys(changed))
+        audit_result = {
+            **result,
+            "changed_files": changed,
+            "maintenance": maintenance,
+            "character_state_audit": {
+                "memory_events": memory_audit,
+                "relationship_events": relationship_audit,
+                "source_rule": "Facts require in-world evidence; calendar/prompt/runtime/hidden lore are blocked; writes are limited to snapshot-loaded characters and pairs.",
+            },
+            "time_and_autonomy_audit": time_autonomy_audit,
+            "blocked_paths": ["characters/<id>/*.yaml", "legacy monolithic dynamic memory files"],
+            "rollback_snapshot_file": rollback_snapshot_file,
+            "audit_note": "Internal audit record. Never render this file or its metadata as scene output.",
+        }
         writes[LAST_APPLY_RESULT_FILE] = audit_result
+        change_reason = _find(payload, "change_reason", "apply_reason", "reason")
+        session_recovery.plan_change_journal(sid, writes, {
+            "kind": "apply",
+            "turn_id": turn_id,
+            "turn_number": pending.get("turn_number"),
+            "base_revision": current_revision,
+            "state_revision": new_revision,
+            "snapshot_file": rollback_snapshot_file,
+            "reason": str(change_reason or "applied gameplay turn")[:500],
+            "changed_files": changed,
+            "player_input_sha256": pending.get("player_input_sha256"),
+            "scene_sha256": hashlib.sha256(text.encode("utf-8")).hexdigest(),
+        })
+        tracked_paths = sorted(path for path in writes if path != session_recovery.CHANGE_JOURNAL_FILE)
+        try:
+            built_snapshot_path, rollback_snapshot = session_recovery.build_apply_snapshot(
+                sid,
+                turn_id=turn_id,
+                turn_number=pending.get("turn_number"),
+                base_revision=current_revision,
+                state_revision=new_revision,
+                paths=tracked_paths,
+                after_writes=writes,
+                reason=str(change_reason or "applied gameplay turn"),
+            )
+        except ValueError as exc:
+            return _rejected(
+                sid,
+                str(exc),
+                turn_id=turn_id,
+                expected_turn_id=expected_turn_id,
+                next_action="getSessionIntegrity",
+                validation_errors=[{"code": "rollback_snapshot_capture_failed", "message": str(exc)}],
+            )
+        if built_snapshot_path != rollback_snapshot_file:
+            raise RuntimeError("Rollback snapshot path changed during apply planning.")
+        writes[rollback_snapshot_file] = rollback_snapshot
+        pruned_snapshots = session_recovery.snapshot_prune_candidates(
+            sid, preserve={rollback_snapshot_file}
+        )
 
-        # If the process stops after any target replacement, the prepared journal
-        # rolls all files forward on the next request. A retry then returns the
-        # stored result without applying the turn twice.
-        base.commit_json_transaction(sid, f"apply_{turn_id}", writes)
+        # The prepared transaction now contains the canonical writes, the inverse
+        # image needed for undo, and any safe retention deletions. Recovery replays
+        # the same complete set after an interrupted process.
+        base.commit_json_transaction(
+            sid,
+            f"apply_{turn_id}",
+            writes,
+            deletes=pruned_snapshots,
+        )
         return result
+
 
 
 try:

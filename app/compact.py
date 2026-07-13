@@ -18,7 +18,7 @@ from typing import Any
 from fastapi import FastAPI
 
 APP_NAME = "akira-1206-v3"
-APP_VERSION = "0.8.0-v3-scene-validation-rewrite-gate"
+APP_VERSION = "0.9.0-v3-session-recovery-rollback"
 BASE_URL = os.getenv("PUBLIC_BASE_URL") or os.getenv("RAILWAY_PUBLIC_DOMAIN") or "http://localhost:8000"
 if BASE_URL and not BASE_URL.startswith(("http://", "https://")):
     BASE_URL = "https://" + BASE_URL
@@ -29,6 +29,7 @@ SESSIONS_DIR = DATA_DIR / "sessions"
 TURN_RUNTIME_FILE = "state/turn_runtime.json"
 CONTEXT_SNAPSHOT_FILE = "state/context_snapshot.json"
 TRANSACTIONS_DIR = "state/transactions"
+RECOVERY_AUDIT_FILE = "state/recovery_audit.json"
 
 _SESSION_LOCKS: dict[str, RLock] = {}
 _SESSION_LOCKS_GUARD = RLock()
@@ -213,16 +214,17 @@ def _safe_session_target(session_id: str, relative_path: str | Path) -> Path:
     return target
 
 
-def commit_json_transaction(session_id: str, transaction_id: str, writes: dict[str, Any]) -> None:
-    """Durably roll a set of JSON files forward as one recoverable transaction.
-
-    A prepared journal is written before any target. If the process dies between
-    file replacements, ``ensure_session`` replays the complete target set before
-    the next request is served.
-    """
+def commit_json_transaction(
+    session_id: str,
+    transaction_id: str,
+    writes: dict[str, Any],
+    deletes: list[str] | None = None,
+) -> None:
+    """Durably roll JSON writes and deletions forward as one recoverable transaction."""
     sid = safe_session_id(session_id)
     safe_tid = safe_session_id(transaction_id)
-    if not writes:
+    delete_paths = sorted({str(path).lstrip("/") for path in (deletes or []) if str(path).strip()})
+    if not writes and not delete_paths:
         return
     with session_guard(sid):
         root = _session_root(sid)
@@ -231,30 +233,58 @@ def commit_json_transaction(session_id: str, transaction_id: str, writes: dict[s
             {"path": str(path).lstrip("/"), "data": data}
             for path, data in sorted(writes.items(), key=lambda item: item[0])
         ]
+        write_paths = {item["path"] for item in ordered}
+        overlap = write_paths.intersection(delete_paths)
+        if overlap:
+            raise ValueError(f"Transaction cannot write and delete the same path: {sorted(overlap)}")
         for item in ordered:
             _safe_session_target(sid, item["path"])
+        for path in delete_paths:
+            _safe_session_target(sid, path)
         journal_path = _safe_session_target(sid, f"{TRANSACTIONS_DIR}/{safe_tid}.json")
         journal = {
-            "schema": "json_transaction_v1",
+            "schema": "json_transaction_v2",
             "transaction_id": safe_tid,
             "status": "prepared",
             "prepared_at": datetime.utcnow().isoformat(),
             "writes": ordered,
+            "deletes": delete_paths,
         }
         _atomic_write_json_target(journal_path, journal)
         for item in ordered:
             _atomic_write_json_target(_safe_session_target(sid, item["path"]), item["data"])
+        for path in delete_paths:
+            _safe_session_target(sid, path).unlink(missing_ok=True)
         journal["status"] = "committed"
         journal["committed_at"] = datetime.utcnow().isoformat()
         _atomic_write_json_target(journal_path, journal)
-        try:
-            journal_path.unlink()
-        except FileNotFoundError:
-            pass
+        journal_path.unlink(missing_ok=True)
+
+
+def _append_recovery_audit(session_id: str, entry: dict[str, Any]) -> None:
+    target = _safe_session_target(session_id, RECOVERY_AUDIT_FILE)
+    current: dict[str, Any] = {}
+    try:
+        if target.is_file():
+            loaded = json.loads(target.read_text(encoding="utf-8"))
+            if isinstance(loaded, dict):
+                current = loaded
+    except Exception:
+        current = {}
+    entries = current.get("entries") if isinstance(current.get("entries"), list) else []
+    entries = [item for item in entries if isinstance(item, dict)]
+    entries.append(dict(entry))
+    entries = entries[-300:]
+    _atomic_write_json_target(target, {
+        "schema": "transaction_recovery_audit_v1",
+        "entries": entries,
+        "total_entries_retained": len(entries),
+        "last_recovered_at": entry.get("recovered_at"),
+    })
 
 
 def recover_json_transactions(session_id: str) -> list[str]:
-    """Finish prepared multi-file writes left behind by an interrupted request."""
+    """Finish prepared multi-file writes/deletes left by an interrupted request."""
     sid = safe_session_id(session_id)
     recovered: list[str] = []
     with session_guard(sid):
@@ -268,19 +298,38 @@ def recover_json_transactions(session_id: str) -> list[str]:
                 continue
             status = str(journal.get("status") or "") if isinstance(journal, dict) else ""
             writes = journal.get("writes") if isinstance(journal, dict) else None
+            deletes = journal.get("deletes") if isinstance(journal, dict) else []
             if status == "committed":
                 journal_path.unlink(missing_ok=True)
                 continue
-            if status != "prepared" or not isinstance(writes, list):
+            if status != "prepared" or not isinstance(writes, list) or not isinstance(deletes, list):
                 continue
+            recovered_writes: list[str] = []
+            recovered_deletes: list[str] = []
             for item in writes:
                 if not isinstance(item, dict) or "path" not in item:
                     raise ValueError(f"Invalid transaction journal: {journal_path}")
-                _atomic_write_json_target(_safe_session_target(sid, item["path"]), item.get("data"))
+                path = str(item["path"]).lstrip("/")
+                _atomic_write_json_target(_safe_session_target(sid, path), item.get("data"))
+                recovered_writes.append(path)
+            for raw_path in deletes:
+                path = str(raw_path).lstrip("/")
+                _safe_session_target(sid, path).unlink(missing_ok=True)
+                recovered_deletes.append(path)
+            recovered_at = datetime.utcnow().isoformat()
             journal["status"] = "committed"
-            journal["recovered_at"] = datetime.utcnow().isoformat()
+            journal["recovered_at"] = recovered_at
             _atomic_write_json_target(journal_path, journal)
-            recovered.append(str(journal.get("transaction_id") or journal_path.stem))
+            transaction_id = str(journal.get("transaction_id") or journal_path.stem)
+            _append_recovery_audit(sid, {
+                "transaction_id": transaction_id,
+                "recovered_at": recovered_at,
+                "prepared_at": journal.get("prepared_at"),
+                "recovered_writes": recovered_writes,
+                "recovered_deletes": recovered_deletes,
+                "reason": "Prepared transaction was replayed automatically before serving the next request.",
+            })
+            recovered.append(transaction_id)
             journal_path.unlink(missing_ok=True)
     return recovered
 
@@ -292,6 +341,8 @@ def default_turn_runtime() -> dict[str, Any]:
         "next_turn_number": 1,
         "pending_turn": None,
         "last_applied_turn": None,
+        "last_state_transition": None,
+        "last_rollback": None,
         "updated_at": datetime.utcnow().isoformat(),
     }
 
@@ -304,6 +355,8 @@ def read_turn_runtime(session_id: str) -> dict[str, Any]:
     runtime.setdefault("next_turn_number", 1)
     runtime.setdefault("pending_turn", None)
     runtime.setdefault("last_applied_turn", None)
+    runtime.setdefault("last_state_transition", None)
+    runtime.setdefault("last_rollback", None)
     return runtime
 
 
