@@ -5,3 +5,4 @@ __pycache__/
 .data/
 pytest-output.txt
 *-pytest-output.txt
+*-pytest.txt

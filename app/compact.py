@@ -18,7 +18,7 @@ from typing import Any
 from fastapi import FastAPI
 
 APP_NAME = "akira-1206-v3"
-APP_VERSION = "0.9.0-v3-session-recovery-rollback"
+APP_VERSION = "0.10.0-v3-quarantine-repair"
 BASE_URL = os.getenv("PUBLIC_BASE_URL") or os.getenv("RAILWAY_PUBLIC_DOMAIN") or "http://localhost:8000"
 if BASE_URL and not BASE_URL.startswith(("http://", "https://")):
     BASE_URL = "https://" + BASE_URL
@@ -343,6 +343,7 @@ def default_turn_runtime() -> dict[str, Any]:
         "last_applied_turn": None,
         "last_state_transition": None,
         "last_rollback": None,
+        "last_repair": None,
         "updated_at": datetime.utcnow().isoformat(),
     }
 
@@ -357,6 +358,7 @@ def read_turn_runtime(session_id: str) -> dict[str, Any]:
     runtime.setdefault("last_applied_turn", None)
     runtime.setdefault("last_state_transition", None)
     runtime.setdefault("last_rollback", None)
+    runtime.setdefault("last_repair", None)
     return runtime
 
 

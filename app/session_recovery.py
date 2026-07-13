@@ -9,8 +9,10 @@ from typing import Any
 
 from app import compact as base
 
-VERSION = "0.9.0-v3-session-recovery-rollback"
-SNAPSHOT_SCHEMA = "turn_revision_snapshot_v1"
+VERSION = "0.10.0-v3-quarantine-repair"
+LEGACY_SNAPSHOT_SCHEMA = "turn_revision_snapshot_v1"
+SNAPSHOT_SCHEMA = "turn_revision_snapshot_v2"
+SUPPORTED_SNAPSHOT_SCHEMAS = {LEGACY_SNAPSHOT_SCHEMA, SNAPSHOT_SCHEMA}
 CHANGE_JOURNAL_SCHEMA = "state_change_journal_v1"
 CHANGE_JOURNAL_FILE = "state/change_journal.json"
 RECOVERY_AUDIT_FILE = "state/recovery_audit.json"
@@ -36,6 +38,55 @@ def _sha(value: Any) -> str:
 
 def _safe_text(value: Any, maximum: int = 500) -> str:
     return " ".join(str(value or "").split())[:maximum]
+
+
+def is_canonical_state_path(path: str) -> bool:
+    normalized = str(path).lstrip("/")
+    if not normalized.startswith("state/") or not normalized.endswith(".json"):
+        return False
+    if normalized in {
+        CHANGE_JOURNAL_FILE,
+        RECOVERY_AUDIT_FILE,
+        "state/repair_history.json",
+    }:
+        return False
+    return not (
+        normalized.startswith(f"{base.TRANSACTIONS_DIR}/")
+        or normalized.startswith(f"{SNAPSHOT_DIR}/")
+        or normalized.startswith("state/quarantine/")
+    )
+
+
+def canonical_state_paths(session_id: str) -> list[str]:
+    root = base._safe_session_target(session_id, "state")
+    session_root = base._safe_session_target(session_id, ".")
+    if not root.is_dir():
+        return []
+    paths: list[str] = []
+    for target in root.rglob("*.json"):
+        relative = str(target.relative_to(session_root)).replace("\\", "/")
+        if target.is_file() and is_canonical_state_path(relative):
+            paths.append(relative)
+    return sorted(set(paths))
+
+
+def _full_state_images(session_id: str) -> dict[str, dict[str, Any]]:
+    return {
+        path: _session_file_image(session_id, path)
+        for path in canonical_state_paths(session_id)
+    }
+
+
+def _image_from_data(data: Any) -> dict[str, Any]:
+    return {"exists": True, "sha256": _sha(data), "data": data}
+
+
+def _snapshot_payload_hash(snapshot: dict[str, Any]) -> str:
+    return _sha({
+        key: value
+        for key, value in snapshot.items()
+        if key != "snapshot_sha256"
+    })
 
 
 def snapshot_file(state_revision: int, turn_id: str) -> str:
@@ -65,12 +116,37 @@ def build_apply_snapshot(
     after_writes: dict[str, Any],
     reason: str,
 ) -> tuple[str, dict[str, Any]]:
-    tracked = sorted({str(path).lstrip("/") for path in paths if path and path != CHANGE_JOURNAL_FILE})
+    changed_paths = sorted(
+        {
+            str(path).lstrip("/")
+            for path in paths
+            if is_canonical_state_path(str(path))
+        }
+        | {
+            str(path).lstrip("/")
+            for path in after_writes
+            if is_canonical_state_path(str(path))
+        }
+    )
     path = snapshot_file(state_revision, turn_id)
-    before = {item: _session_file_image(session_id, item) for item in tracked}
-    after_sha256 = {item: _sha(after_writes[item]) for item in tracked if item in after_writes}
+    before = _full_state_images(session_id)
+    for changed_path in changed_paths:
+        before.setdefault(
+            changed_path,
+            {"exists": False, "sha256": None, "data": None},
+        )
+    after = {
+        item: dict(image)
+        for item, image in before.items()
+        if image.get("exists")
+    }
+    for changed_path, data in after_writes.items():
+        normalized = str(changed_path).lstrip("/")
+        if is_canonical_state_path(normalized):
+            after[normalized] = _image_from_data(data)
     snapshot = {
         "schema": SNAPSHOT_SCHEMA,
+        "kind": "apply",
         "status": "active",
         "snapshot_file": path,
         "turn_id": turn_id,
@@ -79,12 +155,16 @@ def build_apply_snapshot(
         "state_revision": int(state_revision),
         "created_at": _now(),
         "reason": _safe_text(reason) or "applied gameplay turn",
-        "tracked_paths": tracked,
-        "before": before,
-        "after_sha256": after_sha256,
+        "changed_paths": changed_paths,
+        "before": dict(sorted(before.items())),
+        "after": dict(sorted(after.items())),
+        "after_sha256": {
+            item: image.get("sha256")
+            for item, image in sorted(after.items())
+        },
         "rollback_count": 0,
     }
-    snapshot["snapshot_sha256"] = _sha({key: value for key, value in snapshot.items() if key != "snapshot_sha256"})
+    snapshot["snapshot_sha256"] = _snapshot_payload_hash(snapshot)
     return path, snapshot
 
 
@@ -125,17 +205,47 @@ def snapshot_prune_candidates(session_id: str, *, preserve: set[str] | None = No
     return removable[:excess]
 
 
-def _snapshot_hash_mismatches(session_id: str, snapshot: dict[str, Any], *, ignore: set[str] | None = None) -> list[dict[str, Any]]:
+def _snapshot_hash_mismatches(
+    session_id: str,
+    snapshot: dict[str, Any],
+    *,
+    ignore: set[str] | None = None,
+) -> list[dict[str, Any]]:
     ignore = ignore or set()
-    expected = snapshot.get("after_sha256") if isinstance(snapshot.get("after_sha256"), dict) else {}
+    if (
+        snapshot.get("schema") == SNAPSHOT_SCHEMA
+        and isinstance(snapshot.get("after"), dict)
+    ):
+        expected = {
+            path: image.get("sha256")
+            if isinstance(image, dict) and image.get("exists")
+            else None
+            for path, image in snapshot["after"].items()
+        }
+        all_paths = set(expected) | set(canonical_state_paths(session_id))
+    else:
+        hashes = snapshot.get("after_sha256")
+        expected = dict(hashes) if isinstance(hashes, dict) else {}
+        all_paths = set(expected)
     mismatches: list[dict[str, Any]] = []
-    for path, expected_hash in expected.items():
+    for path in sorted(all_paths):
         if path in ignore:
             continue
-        image = _session_file_image(session_id, path)
-        actual_hash = image.get("sha256") if image.get("exists") else None
+        expected_hash = expected.get(path)
+        try:
+            image = _session_file_image(session_id, path)
+            actual_hash = image.get("sha256") if image.get("exists") else None
+            unreadable = False
+        except ValueError:
+            actual_hash = None
+            unreadable = True
         if actual_hash != expected_hash:
-            mismatches.append({"path": path, "expected_sha256": expected_hash, "actual_sha256": actual_hash})
+            mismatches.append({
+                "path": path,
+                "expected_sha256": expected_hash,
+                "actual_sha256": actual_hash,
+                "unreadable_json": unreadable,
+            })
     return mismatches
 
 
@@ -194,7 +304,7 @@ def rollback_last_turn(session_id: str, body: dict[str, Any] | None = None) -> d
             }
         snapshot_path = str(last_applied.get("rollback_snapshot_file") or "")
         snapshot = base.read_session_json(snapshot_path, sid, default={}) if snapshot_path else {}
-        if not isinstance(snapshot, dict) or snapshot.get("schema") != SNAPSHOT_SCHEMA:
+        if not isinstance(snapshot, dict) or snapshot.get("schema") not in SUPPORTED_SNAPSHOT_SCHEMAS:
             return {
                 "success": False,
                 "status": "rollback_snapshot_missing",
@@ -292,6 +402,8 @@ def rollback_last_turn(session_id: str, body: dict[str, Any] | None = None) -> d
         snapshot["rolled_back_at"] = rolled_back_at
         snapshot["rollback_state_revision"] = rollback_revision
         snapshot["rollback_count"] = int(snapshot.get("rollback_count") or 0) + 1
+        if snapshot.get("schema") == SNAPSHOT_SCHEMA:
+            snapshot["snapshot_sha256"] = _snapshot_payload_hash(snapshot)
         writes[snapshot_path] = snapshot
 
         plan_change_journal(sid, writes, {
@@ -370,7 +482,7 @@ def integrity_report(session_id: str) -> dict[str, Any]:
             and int(snapshot.get("state_revision") or -1) == revision
         )
         if transition.get("kind") == "apply":
-            if not isinstance(snapshot, dict) or snapshot.get("schema") != SNAPSHOT_SCHEMA:
+            if not isinstance(snapshot, dict) or snapshot.get("schema") not in SUPPORTED_SNAPSHOT_SCHEMAS:
                 warnings.append({"code": "rollback_snapshot_missing", "turn_id": last_applied.get("turn_id")})
             elif snapshot.get("status") != "active":
                 errors.append({"code": "active_apply_snapshot_not_active", "snapshot_status": snapshot.get("status")})

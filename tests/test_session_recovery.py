@@ -66,7 +66,7 @@ def test_apply_creates_revision_snapshot_change_journal_and_integrity_report(cli
     assert applied["rollback_available"] is True
     assert applied["rollback_snapshot_file"].startswith("state/revision_snapshots/revision_000001_")
     snapshot = base.read_session_json(applied["rollback_snapshot_file"], sid, default={})
-    assert snapshot["schema"] == "turn_revision_snapshot_v1"
+    assert snapshot["schema"] == "turn_revision_snapshot_v2"
     assert snapshot["status"] == "active"
     assert snapshot["base_revision"] == 0
     assert snapshot["state_revision"] == 1
@@ -210,7 +210,7 @@ def test_integrity_report_detects_out_of_transaction_tampering(client: TestClien
 
 def test_openapi_exposes_integrity_and_rollback_actions(client: TestClient) -> None:
     schema = client.get("/openapi-actions.json").json()
-    assert schema["info"]["version"] == "0.9.0-v3-session-recovery-rollback"
+    assert schema["info"]["version"] == "0.10.0-v3-quarantine-repair"
     assert schema["paths"]["/api/v1/sessions/{session_id}/integrity"]["get"]["operationId"] == "getSessionIntegrity"
     rollback = schema["paths"]["/api/v1/sessions/{session_id}/rollback-last-turn"]["post"]
     assert rollback["operationId"] == "rollbackLastTurn"
