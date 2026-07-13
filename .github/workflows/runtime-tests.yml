@@ -35,4 +35,16 @@ jobs:
       - name: Compile runtime
         run: python -m compileall -q app tests
       - name: Run regression suite
-        run: pytest -q
+        run: |
+          set +e
+          pytest -q --tb=short > pytest-output.txt 2>&1
+          status=$?
+          cat pytest-output.txt
+          exit $status
+      - name: Upload pytest log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pytest-output
+          path: pytest-output.txt
+          if-no-files-found: error
