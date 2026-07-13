@@ -1,8 +1,8 @@
 {
   "id": "context_request_pipeline_rules_1206",
-  "version": "1206_v3_context_request_pipeline_v1",
-  "status": "planning_layer_active",
-  "purpose": "Replace one huge scene_contract with preflight -> context_request -> context_slice. Full cards remain in repo; Railway returns only scene-needed blocks.",
+  "version": "1206_v3_single_context_snapshot_v2",
+  "status": "single_server_snapshot_active",
+  "purpose": "Build one immutable Railway context snapshot per protected turn_id, then serve only small scene-needed semantic chunks from it.",
   "pipeline": [
     {
       "step": 1,
@@ -11,33 +11,38 @@
     },
     {
       "step": 2,
-      "name": "gpt_scene_planning",
-      "description": "GPT determines scene type, location focus, block needs, and sends context_request."
+      "name": "turn_contract_snapshot",
+      "description": "getTurnContract validates the pending turn_id, selects full-card characters and freezes one server-side context snapshot."
     },
     {
       "step": 3,
-      "name": "railway_validation",
-      "description": "Railway checks calendar, schedule, location, availability, permission, and hidden/past triggers."
+      "name": "required_context_manifest",
+      "description": "Railway returns the ordered semantic chunk manifest from the frozen snapshot."
     },
     {
       "step": 4,
-      "name": "context_slice",
-      "description": "Railway returns only approved small slices: state, location, schedule, character blocks, relationship blocks."
+      "name": "ordered_context_chunks",
+      "description": "Railway serves each approved chunk in numeric order and records progress; repeats are idempotent and skipped indices are rejected."
     },
     {
       "step": 5,
-      "name": "scene_render",
-      "description": "GPT writes scene from context_slice only."
+      "name": "internal_scene_draft",
+      "description": "After all chunks are served, GPT drafts from that snapshot only and does not show the scene yet."
     },
     {
       "step": 6,
       "name": "apply_turn_result",
-      "description": "GPT sends proposed_updates; API validates and persists state."
+      "description": "GPT sends the same turn_id, final scene and proposed_updates; API requires completed context progress, atomically persists state, then authorizes visible output."
     }
   ],
   "hard_rules": [
     "Do not return full YAML cards to Custom GPT Actions by default.",
-    "Do not split a huge card into chunks; request semantic blocks instead.",
+    "There is exactly one immutable context snapshot for one pending turn_id.",
+    "Client-returned turn_contract, state slices and chunk lists are never a source of truth.",
+    "Do not split raw huge cards into chunks; derive bounded semantic writer-card blocks instead.",
+    "POV full-card sources are mandatory; never insert Akira as a protagonist fallback.",
+    "Every active NPC writer card includes goal, voice/behavior, reaction triggers, known facts and active unknowns.",
+    "applyTurnResult is blocked until every required snapshot chunk was served in order.",
     "State active slice is always needed, but full state history is not.",
     "Location basic slice is needed for every scene.",
     "Schedule slice is needed for base/public/location movement scenes; schedule files may be empty placeholders until filled.",

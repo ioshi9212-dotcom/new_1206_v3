@@ -3,15 +3,18 @@
 Single replacement file. No extra runtime layers.
 
 Principle:
-- Railway plans the turn and decides what context is needed.
+- Railway plans the turn once and freezes one server-side snapshot per turn_id.
 - Custom GPT receives several small chunks, not one huge JSON blob.
+- Manifest and chunks are served only from that immutable snapshot, in order.
 - Character depth is preserved: identity brief + voice + behavior + goal + knowledge boundary are always present.
 - Energy, deep appearance, lore and past are loaded only when the current turn actually needs them.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import re
+from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import Body
@@ -27,6 +30,7 @@ CALENDAR_RUNTIME_FILE = "state/calendar_runtime.json"
 STORY_LINES_FILE = "state/story_lines.json"
 START_SCENE_PATH = "scenes/start_scene.md"
 RENDER_CONTRACT_PATH = "gpt/scene_output_contract_1206.json"
+CONTEXT_SNAPSHOT_FILE = base.CONTEXT_SNAPSHOT_FILE
 
 ID_ALIASES = {
     "акира": "akira", "akira": "akira", "кира": "akira",
@@ -77,7 +81,11 @@ ENERGY_HINTS = (
     "энерг", "сила", "поток", "эхо", "кайрос", "простран", "холод", "огонь",
     "вода", "воздух", "подавлен", "перегруз", "браслет", "барьер", "касани",
 )
-PAST_HINTS = ("прошл", "вспом", "памят", "академ", "райден", "самуэль", "беремен", "ребен", "ребён", "лаборатор")
+PAST_HINTS = (
+    "прошл", "вспом", "флэшбек", "флешбек", "академ", "1198", "1170",
+    "самуэль", "samuel", "беремен", "ребен", "ребён", "лаборатор",
+    "эксперимент", "плен", "старое кольцо", "след от кольца", "потеря ребенка", "потеря ребёнка",
+)
 APPEARANCE_HINTS = ("осмотреть", "выгляд", "лицо", "рост", "волос", "глаза", "шрам", "одеж", "форма", "опис")
 LORE_HINTS = ("эхо", "кайрос", "восточный сектор", "рейдер", "сектор", "самуэль", "система", "заказчик")
 INVENTORY_HINTS = ("карман", "ножниц", "документ", "записк", "блокнот", "оруж", "стол", "взять", "убрать", "пояс")
@@ -352,7 +360,11 @@ def _needs(payload: dict[str, Any], current: dict[str, Any], scene_plan: dict[st
     return {
         "dialogue_or_pressure": _scene_is_dialogue_or_pressure(player_input, scene_plan),
         "energy": bool(requested.get("energy") or required_blocks.get("energy") or any(x in low for x in ENERGY_HINTS)),
-        "past": bool(current.get("load_past") or requested.get("past") or any(x in low for x in PAST_HINTS)),
+        "past": bool(
+            current.get("load_past")
+            or any(x in low for x in PAST_HINTS)
+            or (requested.get("past") and scene_plan.get("past_trigger_reason"))
+        ),
         "deep_appearance": bool(requested.get("appearance") or any(x in low for x in APPEARANCE_HINTS)),
         "lore": bool(requested.get("lore") or any(x in low for x in LORE_HINTS)),
         "inventory": bool(requested.get("inventory") or required_blocks.get("inventory") or any(x in low for x in INVENTORY_HINTS)),
@@ -360,6 +372,24 @@ def _needs(payload: dict[str, Any], current: dict[str, Any], scene_plan: dict[st
         "location": True,
         "render_contract": True,
     }
+
+
+def _past_trigger_terms(current: dict[str, Any], scene_plan: dict[str, Any], player_input: str) -> list[str]:
+    low = " ".join([
+        player_input,
+        json.dumps(scene_plan, ensure_ascii=False),
+        str(current.get("scene_goal") or current.get("current_scene_goal") or ""),
+    ]).lower().replace("ё", "е")
+    terms = [term for term in PAST_HINTS if term.replace("ё", "е") in low]
+    explicit = scene_plan.get("past_trigger_terms")
+    if isinstance(explicit, list):
+        for value in explicit:
+            term = _trim(value, 80).lower().replace("ё", "е")
+            if term and term not in terms:
+                terms.append(term)
+    if current.get("load_past") and not terms:
+        terms.append("current_state_explicit_past_trigger")
+    return terms[:8]
 
 
 def _collect_character_ids(payload: dict[str, Any], current: dict[str, Any], scene_plan: dict[str, Any], player_input: str) -> list[str]:
@@ -371,8 +401,7 @@ def _collect_character_ids(payload: dict[str, Any], current: dict[str, Any], sce
         _add_id(ids, scene_plan.get(key))
         _add_id(ids, payload.get(key))
     _add_id(ids, current.get("scene_character_ids") or current.get("active_character_ids"))
-    # Keep chunk size bounded. Further characters must be delayed or requested through context-more.
-    return ids[:7]
+    return ids
 
 
 def _role_for(cid: str, current: dict[str, Any], scene_plan: dict[str, Any]) -> str:
@@ -387,7 +416,9 @@ def _role_for(cid: str, current: dict[str, Any], scene_plan: dict[str, Any]) -> 
         return "speaking"
     if cid in addressed:
         return "addressed"
-    if cid in [_canonical_id(x) for x in (current.get("present_character_ids") or [])]:
+    present = [_canonical_id(x) for x in (current.get("present_character_ids") or [])]
+    present += [_canonical_id(x) for x in (scene_plan.get("present_characters") or [])]
+    if cid in present:
         return "present_reaction"
     return "referenced"
 
@@ -413,6 +444,32 @@ def _character_sources(sid: str, cid: str) -> tuple[str, str, str, dict[str, Any
     if not isinstance(memory, dict):
         memory = {}
     return char_text, know_text, main_text, memory
+
+
+def _character_source_audit(sid: str, cid: str) -> dict[str, Any]:
+    required = [
+        f"characters/{cid}/main.yaml",
+        f"characters/{cid}/character.yaml",
+        f"characters/{cid}/knowledge.yaml",
+    ]
+    missing = [path for path in required if not _read_text(path, sid).strip()]
+    return {
+        "character_id": cid,
+        "valid": not missing,
+        "required_sources": required,
+        "dynamic_memory_source": f"state/character_memory/{cid}.json",
+        "missing_sources": missing,
+    }
+
+
+def _json_sha256(value: Any) -> str:
+    return hashlib.sha256(
+        json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), default=str).encode("utf-8")
+    ).hexdigest()
+
+
+def _now() -> str:
+    return datetime.now(UTC).isoformat()
 
 
 def _goal_override(cid: str) -> list[str]:
@@ -457,7 +514,7 @@ def _knowledge_guard_override(cid: str) -> dict[str, list[str]]:
     return {"knows": [], "does_not_know": [], "speech_guard": []}
 
 
-def _character_core_card(sid: str, cid: str, role: str, needs: dict[str, bool]) -> dict[str, Any]:
+def _character_core_card(sid: str, cid: str, role: str, needs: dict[str, bool], current: dict[str, Any]) -> dict[str, Any]:
     char_text, know_text, main_text, memory = _character_sources(sid, cid)
     line_boost = 11 if role == "pov" else 8
     if needs.get("dialogue_or_pressure"):
@@ -467,14 +524,19 @@ def _character_core_card(sid: str, cid: str, role: str, needs: dict[str, bool]) 
         "id": cid,
         "role_in_scene": role,
         "identity_brief": IDENTITY_OVERRIDES.get(cid) or _trim("; ".join(identity_lines), 500) or f"{cid}: use loaded card only; do not invent appearance.",
-        "visible_labels": _visible_labels_for(cid, _ensure_current(sid)),
+        "visible_labels": _visible_labels_for(cid, current),
         "current_goal_priority": _goal_override(cid) + _matching_lines(main_text + "\n" + char_text, CHARACTER_PATTERNS["goal"], max_lines=6, max_chars=700),
         "voice_behavior_habits": _matching_lines(char_text, CHARACTER_PATTERNS["voice"] + CHARACTER_PATTERNS["behavior"], max_lines=line_boost, max_chars=1200),
         "must_react_to_now": _matching_lines(char_text + "\n" + know_text, CHARACTER_PATTERNS["reaction"], max_lines=line_boost, max_chars=1200),
         "player_control_or_npc_rule": "POV: do not invent important Akira replies/questions/agreements." if role == "pov" else "NPC: each line must come from goal + visible source + knowledge/unknown boundary.",
         "energy_loaded": bool(needs.get("energy")),
         "energy_note": "Energy is omitted in this chunk because the scene did not request/trigger energy." if not needs.get("energy") else "Energy details are in energy_lore chunk.",
-        "source_files_used": [f"characters/{cid}/character.yaml", f"characters/{cid}/knowledge.yaml", f"state/character_memory/{cid}.json"],
+        "source_files_used": [
+            f"characters/{cid}/main.yaml",
+            f"characters/{cid}/character.yaml",
+            f"characters/{cid}/knowledge.yaml",
+            f"state/character_memory/{cid}.json",
+        ],
     }
 
 
@@ -489,6 +551,7 @@ def _character_knowledge_card(sid: str, cid: str, role: str, needs: dict[str, bo
         "unknown_or_forbidden": guard.get("does_not_know", []) + _matching_lines(know_text, KNOWLEDGE_PATTERNS["unknowns"] + KNOWLEDGE_PATTERNS["hides"], max_lines=line_boost, max_chars=1100) + _memory_lines(memory, ("does_not_know", "не знает", "hiding", "is_hiding", "скры"), max_items=5, max_chars=700),
         "speech_and_name_guard": guard.get("speech_guard", []) + UNKNOWN_NAME_RULES,
         "unknowns_are_active_rule": "Unknowns should create questions, checks, pauses, pressure, evasion, bluffing or wrong assumptions — not omniscience and not silence.",
+        "source_files_used": [f"characters/{cid}/knowledge.yaml", f"state/character_memory/{cid}.json"],
     }
 
 
@@ -632,6 +695,34 @@ def _lore_slice(sid: str, needs: dict[str, bool]) -> dict[str, Any]:
     return {"loaded": True, "files": result[:3], "rule": "Lore is engine context, not automatic NPC knowledge."}
 
 
+def _past_memory_slice(sid: str, cids: list[str], contract: dict[str, Any]) -> dict[str, Any]:
+    raw_terms = contract.get("past_trigger_terms") if isinstance(contract.get("past_trigger_terms"), list) else []
+    terms = tuple(
+        str(term).lower().replace("ё", "е")
+        for term in raw_terms
+        if str(term) != "current_state_explicit_past_trigger"
+    )
+    result: dict[str, Any] = {}
+    if terms:
+        for cid in cids:
+            path = f"characters/{cid}/past.yaml"
+            text = _read_text(path, sid)
+            lines = _matching_lines(text, terms, max_lines=10, max_chars=1400) if text else []
+            if lines:
+                result[cid] = {
+                    "source_file": path,
+                    "trigger_terms": list(terms),
+                    "selected_lines": lines,
+                }
+    return {
+        "past_loaded_for": list(result.keys()),
+        "past_slices": result,
+        "trigger_terms": raw_terms,
+        "diagnostic": None if result else "Past trigger existed, but no narrow matching source lines were found; full past.yaml was not exposed.",
+        "rule": "Only trigger-matched lines are available. Do not infer neighboring hidden facts or turn this into an exposition dump.",
+    }
+
+
 def _extract_start_scene_text() -> str:
     text = _read_text(START_SCENE_PATH)
     match = re.search(r"```text\s*(.*?)```", text, flags=re.S)
@@ -691,7 +782,65 @@ def _build_turn_contract(sid: str, payload: dict[str, Any]) -> dict[str, Any]:
     scene_plan = payload.get("scene_plan") if isinstance(payload.get("scene_plan"), dict) else {}
     player_input = str(pending.get("player_input") or "")
     needs = _needs(payload, current, scene_plan, player_input)
-    cids = _collect_character_ids(payload, current, scene_plan, player_input)
+    past_trigger_terms = _past_trigger_terms(current, scene_plan, player_input)
+    pov_id = _canonical_id(current.get("pov_character_id"))
+    if not pov_id:
+        error = _turn_contract_error(
+            sid,
+            current,
+            "current_state has no pov_character_id. The builder will not insert Akira as a fallback.",
+            "getPreflight",
+        )
+        error["builder_diagnostics"] = [{
+            "severity": "error",
+            "fallback_blocked": "default_protagonist_insertion",
+            "reason": "POV is missing from active state.",
+            "needed_input": "Set an explicit pov_character_id through processTurn/current state.",
+        }]
+        return error
+
+    requested_cids = _collect_character_ids(payload, current, scene_plan, player_input)
+    source_audit = {cid: _character_source_audit(sid, cid) for cid in requested_cids}
+    if pov_id not in source_audit:
+        source_audit[pov_id] = _character_source_audit(sid, pov_id)
+        requested_cids.insert(0, pov_id)
+    if not source_audit[pov_id]["valid"]:
+        error = _turn_contract_error(
+            sid,
+            current,
+            f"POV character '{pov_id}' is missing required full-card sources.",
+            "getPreflight",
+        )
+        error["builder_diagnostics"] = [{
+            "severity": "error",
+            "fallback_blocked": "summary_as_behavior_source",
+            "reason": f"POV '{pov_id}' cannot be built from main/character/knowledge files.",
+            "missing_sources": source_audit[pov_id]["missing_sources"],
+            "needed_input": "Restore the full character card or select a valid explicit POV.",
+        }]
+        return error
+
+    invalid_cids = [cid for cid in requested_cids if not source_audit[cid]["valid"]]
+    valid_cids = [cid for cid in requested_cids if source_audit[cid]["valid"]]
+    cids = valid_cids[:7]
+    omitted_cids = valid_cids[7:]
+    diagnostics: list[dict[str, Any]] = []
+    if invalid_cids:
+        diagnostics.append({
+            "severity": "warning",
+            "fallback_blocked": "summary_as_behavior_source",
+            "reason": "Characters without complete full-card sources were excluded.",
+            "character_ids": invalid_cids,
+            "missing_sources": {cid: source_audit[cid]["missing_sources"] for cid in invalid_cids},
+        })
+    if omitted_cids:
+        diagnostics.append({
+            "severity": "warning",
+            "fallback_blocked": "unbounded_character_dump",
+            "reason": "Context is bounded to seven relevant full-card characters for one turn.",
+            "omitted_character_ids": omitted_cids,
+            "needed_input": "Delay them or make their relevance explicit in a later turn.",
+        })
     roles = {cid: _role_for(cid, current, scene_plan) for cid in cids}
     chunks: list[dict[str, Any]] = [
         {"chunk_index": 0, "chunk_type": "characters_core", "contains": cids, "why": "identity brief + voice + behavior + goals; energy omitted unless triggered"},
@@ -709,7 +858,8 @@ def _build_turn_contract(sid: str, payload: dict[str, Any]) -> dict[str, Any]:
         "success": True,
         "session_id": sid,
         "runtime_version": RUNTIME_VERSION,
-        "mode": "v3_hybrid_turn_contract",
+        "mode": "v3_single_snapshot_turn_contract",
+        "context_snapshot_id": f"context_{pending.get('turn_id')}",
         "turn_id": pending.get("turn_id"),
         "turn_number": pending.get("turn_number"),
         "base_revision": pending.get("base_revision"),
@@ -718,8 +868,21 @@ def _build_turn_contract(sid: str, payload: dict[str, Any]) -> dict[str, Any]:
         "current_frame": _current_state_slice(current),
         "scene_plan_used": scene_plan,
         "needs_decided_by_railway": needs,
+        "past_trigger_terms": past_trigger_terms,
         "character_ids": cids,
         "character_roles": roles,
+        "pov_character_id": pov_id,
+        "pov_loaded": pov_id in cids,
+        "character_source_audit": {cid: source_audit[cid] for cid in cids},
+        "writer_card_contract": {
+            "required_for_each_loaded_character": [
+                "identity_brief", "current_goal_priority", "voice_behavior_habits", "must_react_to_now",
+                "known_as_fact", "unknown_or_forbidden", "speech_and_name_guard",
+            ],
+            "pov_rule": "POV full card is mandatory. Never insert Akira merely because she is the protagonist.",
+            "npc_rule": "Active NPC behavior must come from goal + knowledge + unknowns + reaction triggers, never generic scene convenience.",
+        },
+        "builder_diagnostics": diagnostics,
         "required_chunks": chunks,
         "total_chunks": len(chunks),
         "must_load_rule": "Use this same turn_id for manifest, every chunk and applyTurnResult. Draft only after all chunks; do not show scene text before successful apply.",
@@ -748,7 +911,7 @@ def _manifest_from_contract(contract: dict[str, Any]) -> dict[str, Any]:
         "success": True,
         "session_id": contract.get("session_id"),
         "runtime_version": RUNTIME_VERSION,
-        "mode": "v3_hybrid_required_context_manifest",
+        "mode": "v3_single_snapshot_required_context_manifest",
         "turn_id": contract.get("turn_id"),
         "base_revision": contract.get("base_revision"),
         "total_chunks": len(chunks),
@@ -760,36 +923,14 @@ def _manifest_from_contract(contract: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _validated_contract(sid: str, payload: dict[str, Any]) -> dict[str, Any]:
-    supplied_contract = payload.get("turn_contract") if isinstance(payload.get("turn_contract"), dict) else None
-    if not supplied_contract:
-        return _build_turn_contract(sid, payload)
-    current = _ensure_current(sid)
-    pending = base.get_pending_turn(sid)
-    supplied_turn_id = _payload_turn_id(payload)
-    contract_turn_id = str(supplied_contract.get("turn_id") or "")
-    if not pending:
-        return _turn_contract_error(sid, current, "The pending turn was already applied or reset; stale context was rejected.", "waitForPlayerInput")
-    expected = str(pending.get("turn_id") or "")
-    if not supplied_turn_id or supplied_turn_id != expected or contract_turn_id != expected:
-        return _turn_contract_error(sid, current, "Context contract turn_id does not match the protected pending turn.", "getTurnContract")
-    if not supplied_contract.get("success"):
-        return _turn_contract_error(sid, current, str(supplied_contract.get("error") or "Turn contract is invalid."), "getTurnContract")
-
-    # Never trust client-returned chunk lists or state slices. Rebuild them from
-    # Railway state and the protected input; only the earlier scene plan is reused.
-    canonical_payload = dict(payload)
-    canonical_payload.pop("turn_contract", None)
-    if not isinstance(canonical_payload.get("scene_plan"), dict):
-        scene_plan = supplied_contract.get("scene_plan_used")
-        if isinstance(scene_plan, dict):
-            canonical_payload["scene_plan"] = scene_plan
-    canonical_payload["turn_id"] = expected
-    return _build_turn_contract(sid, canonical_payload)
-
-
-def _chunk_content(sid: str, contract: dict[str, Any], chunk_index: int) -> dict[str, Any]:
-    current = _ensure_current(sid)
+def _chunk_content(
+    sid: str,
+    contract: dict[str, Any],
+    chunk_index: int,
+    *,
+    current: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    current = current if isinstance(current, dict) else _ensure_current(sid)
     needs = contract.get("needs_decided_by_railway") if isinstance(contract.get("needs_decided_by_railway"), dict) else {}
     cids = contract.get("character_ids") if isinstance(contract.get("character_ids"), list) else []
     cids = [_canonical_id(x) for x in cids][:7]
@@ -801,7 +942,7 @@ def _chunk_content(sid: str, contract: dict[str, Any], chunk_index: int) -> dict
 
     if chunk_type == "characters_core":
         return {
-            "characters": {cid: _character_core_card(sid, cid, str(roles.get(cid) or "referenced"), needs) for cid in cids},
+            "characters": {cid: _character_core_card(sid, cid, str(roles.get(cid) or "referenced"), needs, current) for cid in cids},
             "global_character_rules": [
                 "Character behavior comes from loaded cards first, not generic scene convenience.",
                 "Appearance is brief unless deep_appearance=true; never invent hair/age/height against identity_brief.",
@@ -838,13 +979,231 @@ def _chunk_content(sid: str, contract: dict[str, Any], chunk_index: int) -> dict
     if chunk_type == "world_lore_minimal":
         return _lore_slice(sid, needs)
     if chunk_type == "past_memory_minimal":
-        result = {}
-        for cid in cids:
-            text = _read_text(f"characters/{cid}/past.yaml", sid)
-            if text:
-                result[cid] = _trim(text, 1200)
-        return {"past_loaded_for": list(result.keys()), "past_excerpts": result, "rule": "Use past only for triggered subtext/recognition, not exposition dump."}
+        return _past_memory_slice(sid, cids, contract)
     return {"warning": "Unknown chunk type", "chunk_type": chunk_type}
+
+
+def _context_snapshot_failure(contract: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "schema": "context_snapshot_v1",
+        "success": False,
+        "status": "rejected",
+        "turn_id": contract.get("turn_id"),
+        "contract": contract,
+        "error": contract.get("error") or "Context snapshot could not be built.",
+    }
+
+
+def _snapshot_matches_pending(snapshot: Any, pending: dict[str, Any]) -> bool:
+    return bool(
+        isinstance(snapshot, dict)
+        and snapshot.get("schema") == "context_snapshot_v1"
+        and snapshot.get("status") == "ready"
+        and snapshot.get("runtime_version") == RUNTIME_VERSION
+        and snapshot.get("turn_id") == pending.get("turn_id")
+        and int(snapshot.get("base_revision") or 0) == int(pending.get("base_revision") or 0)
+        and snapshot.get("player_input_sha256") == pending.get("player_input_sha256")
+        and isinstance(snapshot.get("contract"), dict)
+        and isinstance(snapshot.get("manifest"), dict)
+        and isinstance(snapshot.get("chunk_packets"), list)
+    )
+
+
+def _canonical_snapshot_payload(payload: dict[str, Any], turn_id: str) -> dict[str, Any]:
+    canonical = dict(payload)
+    supplied_contract = canonical.pop("turn_contract", None)
+    if not isinstance(canonical.get("scene_plan"), dict) and isinstance(supplied_contract, dict):
+        old_plan = supplied_contract.get("scene_plan_used")
+        if isinstance(old_plan, dict):
+            canonical["scene_plan"] = old_plan
+    canonical["turn_id"] = turn_id
+    return canonical
+
+
+def _get_or_build_context_snapshot(sid: str, payload: dict[str, Any]) -> tuple[dict[str, Any], bool]:
+    """Build exactly one immutable context payload for the protected turn."""
+    with base.session_guard(sid):
+        current = _ensure_current(sid)
+        pending = base.get_pending_turn(sid)
+        supplied_turn_id = _payload_turn_id(payload)
+        if not pending or not supplied_turn_id or supplied_turn_id != str(pending.get("turn_id") or ""):
+            return _context_snapshot_failure(_build_turn_contract(sid, payload)), False
+
+        existing = base.read_session_json(CONTEXT_SNAPSHOT_FILE, sid, default={})
+        if _snapshot_matches_pending(existing, pending):
+            return existing, True
+
+        canonical_payload = _canonical_snapshot_payload(payload, str(pending.get("turn_id") or ""))
+        contract = _build_turn_contract(sid, canonical_payload)
+        if not contract.get("success"):
+            return _context_snapshot_failure(contract), False
+
+        manifest = _manifest_from_contract(contract)
+        required = contract.get("required_chunks") if isinstance(contract.get("required_chunks"), list) else []
+        chunk_packets: list[dict[str, Any]] = []
+        for chunk_index, chunk_meta in enumerate(required):
+            has_more = chunk_index + 1 < len(required)
+            packet = {
+                "success": True,
+                "session_id": sid,
+                "runtime_version": RUNTIME_VERSION,
+                "mode": "v3_single_snapshot_required_context_chunk",
+                "turn_id": contract.get("turn_id"),
+                "base_revision": contract.get("base_revision"),
+                "chunk_index": chunk_index,
+                "chunk_type": chunk_meta.get("chunk_type") if isinstance(chunk_meta, dict) else "unknown",
+                "total_chunks": len(required),
+                "has_more": has_more,
+                "next_chunk_index": chunk_index + 1 if has_more else None,
+                "content": _chunk_content(sid, contract, chunk_index, current=current),
+                "next_action": "getRequiredContextChunk" if has_more else "draftThenApplyTurnResult",
+                "draft_scene_allowed": not has_more,
+                "visible_scene_output_allowed": False,
+                "after_last_chunk": "Draft internally; call applyTurnResult with this turn_id; show only the scene text returned after successful apply." if not has_more else None,
+            }
+            chunk_packets.append(packet)
+
+        immutable_hash = _json_sha256({
+            "turn_id": contract.get("turn_id"),
+            "base_revision": contract.get("base_revision"),
+            "player_input_sha256": pending.get("player_input_sha256"),
+            "contract": contract,
+            "manifest": manifest,
+            "chunk_packets": chunk_packets,
+        })
+        contract["context_snapshot_sha256"] = immutable_hash
+        manifest["context_snapshot_sha256"] = immutable_hash
+        for packet in chunk_packets:
+            packet["context_snapshot_sha256"] = immutable_hash
+
+        snapshot = {
+            "schema": "context_snapshot_v1",
+            "success": True,
+            "status": "ready",
+            "runtime_version": RUNTIME_VERSION,
+            "context_snapshot_id": contract.get("context_snapshot_id"),
+            "context_snapshot_sha256": immutable_hash,
+            "turn_id": pending.get("turn_id"),
+            "turn_number": pending.get("turn_number"),
+            "base_revision": pending.get("base_revision"),
+            "player_input_sha256": pending.get("player_input_sha256"),
+            "built_at": _now(),
+            "contract": contract,
+            "manifest": manifest,
+            "chunk_packets": chunk_packets,
+            "served_chunk_indices": [],
+            "next_required_chunk_index": 0 if chunk_packets else None,
+            "all_required_chunks_served": not chunk_packets,
+        }
+        base.write_json(CONTEXT_SNAPSHOT_FILE, snapshot, session_id=sid)
+        return snapshot, False
+
+
+def _contract_from_snapshot(snapshot: dict[str, Any], reused: bool) -> dict[str, Any]:
+    contract = snapshot.get("contract")
+    if not isinstance(contract, dict):
+        return snapshot
+    result = dict(contract)
+    result["context_snapshot_reused"] = reused
+    result["context_progress"] = {
+        "served_chunk_indices": snapshot.get("served_chunk_indices", []),
+        "next_required_chunk_index": snapshot.get("next_required_chunk_index"),
+        "all_required_chunks_served": bool(snapshot.get("all_required_chunks_served")),
+    }
+    return result
+
+
+def _manifest_from_snapshot(snapshot: dict[str, Any], reused: bool) -> dict[str, Any]:
+    manifest = snapshot.get("manifest")
+    if not isinstance(manifest, dict):
+        contract = snapshot.get("contract") if isinstance(snapshot.get("contract"), dict) else snapshot
+        return _manifest_from_contract(contract)
+    result = dict(manifest)
+    result["context_snapshot_reused"] = reused
+    result["served_chunk_indices"] = snapshot.get("served_chunk_indices", [])
+    result["next_chunk_index"] = snapshot.get("next_required_chunk_index")
+    result["all_required_chunks_served"] = bool(snapshot.get("all_required_chunks_served"))
+    result["next_action"] = "draftThenApplyTurnResult" if result["all_required_chunks_served"] else "getRequiredContextChunk"
+    return result
+
+
+def _serve_context_chunk(sid: str, payload: dict[str, Any], chunk_index: int) -> dict[str, Any]:
+    snapshot, _reused = _get_or_build_context_snapshot(sid, payload)
+    if not snapshot.get("success"):
+        contract = snapshot.get("contract") if isinstance(snapshot.get("contract"), dict) else {}
+        return {
+            "success": False,
+            "session_id": sid,
+            "runtime_version": RUNTIME_VERSION,
+            "mode": "v3_required_context_chunk_rejected",
+            "turn_id": contract.get("turn_id"),
+            "error": snapshot.get("error") or contract.get("error") or "Context snapshot is invalid.",
+            "next_action": contract.get("next_action") or "getTurnContract",
+            "visible_scene_output_allowed": False,
+        }
+
+    with base.session_guard(sid):
+        latest = base.read_session_json(CONTEXT_SNAPSHOT_FILE, sid, default={})
+        pending = base.get_pending_turn(sid)
+        if not pending or not _snapshot_matches_pending(latest, pending):
+            return {
+                "success": False,
+                "session_id": sid,
+                "runtime_version": RUNTIME_VERSION,
+                "mode": "v3_required_context_chunk_rejected",
+                "turn_id": snapshot.get("turn_id"),
+                "error": "Context snapshot no longer matches the protected pending turn.",
+                "next_action": "getPreflight",
+                "visible_scene_output_allowed": False,
+            }
+        packets = latest.get("chunk_packets") if isinstance(latest.get("chunk_packets"), list) else []
+        total = len(packets)
+        if chunk_index < 0 or chunk_index >= total:
+            return {
+                "success": False,
+                "session_id": sid,
+                "runtime_version": RUNTIME_VERSION,
+                "mode": "v3_required_context_chunk_rejected",
+                "turn_id": latest.get("turn_id"),
+                "error": f"chunk_index {chunk_index} is outside required range 0..{max(total - 1, 0)}.",
+                "total_chunks": total,
+                "next_action": "getRequiredContextChunk" if total else "getTurnContract",
+                "next_chunk_index": latest.get("next_required_chunk_index"),
+                "visible_scene_output_allowed": False,
+            }
+        served = sorted({int(value) for value in latest.get("served_chunk_indices", []) if isinstance(value, int) or str(value).isdigit()})
+        replayed = chunk_index in served
+        next_required = next((index for index in range(total) if index not in served), None)
+        if not replayed and chunk_index != next_required:
+            return {
+                "success": False,
+                "session_id": sid,
+                "runtime_version": RUNTIME_VERSION,
+                "mode": "v3_required_context_chunk_out_of_order",
+                "turn_id": latest.get("turn_id"),
+                "error": f"Chunk {chunk_index} was requested out of order; load chunk {next_required} next.",
+                "total_chunks": total,
+                "served_chunk_indices": served,
+                "next_chunk_index": next_required,
+                "next_action": "getRequiredContextChunk",
+                "visible_scene_output_allowed": False,
+            }
+        if not replayed:
+            served.append(chunk_index)
+            served.sort()
+            next_required = next((index for index in range(total) if index not in served), None)
+            latest["served_chunk_indices"] = served
+            latest["next_required_chunk_index"] = next_required
+            latest["all_required_chunks_served"] = next_required is None
+            latest["updated_at"] = _now()
+            base.write_json(CONTEXT_SNAPSHOT_FILE, latest, session_id=sid)
+
+        packet = dict(packets[chunk_index])
+        packet["chunk_replayed"] = replayed
+        packet["served_chunk_indices"] = served
+        packet["next_required_chunk_index"] = next_required
+        packet["all_required_chunks_served"] = next_required is None
+        return packet
 
 
 # Replace old action-safe endpoints from earlier patches.
@@ -866,6 +1225,8 @@ def get_preflight(session_id: str) -> dict[str, Any]:
     current = _ensure_current(sid)
     runtime = base.read_turn_runtime(sid)
     pending = runtime.get("pending_turn") if isinstance(runtime.get("pending_turn"), dict) else None
+    context_snapshot = base.read_session_json(CONTEXT_SNAPSHOT_FILE, sid, default={})
+    snapshot_ready = bool(pending and _snapshot_matches_pending(context_snapshot, pending))
     start_scene_required = bool(current.get("start_scene_exact_text_required") and not current.get("start_scene_completed"))
     if pending:
         next_action = "getTurnContract"
@@ -880,7 +1241,7 @@ def get_preflight(session_id: str) -> dict[str, Any]:
         "success": True,
         "session_id": sid,
         "runtime_version": RUNTIME_VERSION,
-        "mode": "v3_preflight_hybrid_small",
+        "mode": "v3_preflight_single_snapshot_small",
         "state_revision": int(runtime.get("state_revision") or 0),
         "pending_turn": {
             "turn_id": pending.get("turn_id"),
@@ -888,6 +1249,13 @@ def get_preflight(session_id: str) -> dict[str, Any]:
             "base_revision": pending.get("base_revision"),
             "player_input": pending.get("player_input"),
         } if pending else None,
+        "context_snapshot": {
+            "context_snapshot_id": context_snapshot.get("context_snapshot_id"),
+            "context_snapshot_sha256": context_snapshot.get("context_snapshot_sha256"),
+            "served_chunk_indices": context_snapshot.get("served_chunk_indices", []),
+            "next_required_chunk_index": context_snapshot.get("next_required_chunk_index"),
+            "all_required_chunks_served": bool(context_snapshot.get("all_required_chunks_served")),
+        } if snapshot_ready else None,
         "current_state": _current_state_slice(current),
         "calendar": _calendar_slice(sid, current),
         "recent_scene_history": _history_slice(sid, 3),
@@ -900,77 +1268,33 @@ def get_preflight(session_id: str) -> dict[str, Any]:
 @app.post("/api/v3/sessions/{session_id}/turn-contract", operation_id="getTurnContract")
 def get_turn_contract(session_id: str, body: dict[str, Any] | None = Body(default=None)) -> dict[str, Any]:
     sid = _sid(session_id)
-    return _build_turn_contract(sid, _payload(body))
+    snapshot, reused = _get_or_build_context_snapshot(sid, _payload(body))
+    return _contract_from_snapshot(snapshot, reused)
 
 
 @app.post("/api/v3/sessions/{session_id}/required-context/manifest", operation_id="getRequiredContextManifest")
 def get_required_context_manifest(session_id: str, body: dict[str, Any] | None = Body(default=None)) -> dict[str, Any]:
     sid = _sid(session_id)
     payload = _payload(body)
-    contract = _validated_contract(sid, payload)
-    return _manifest_from_contract(contract)
+    snapshot, reused = _get_or_build_context_snapshot(sid, payload)
+    return _manifest_from_snapshot(snapshot, reused)
 
 
 @app.post("/api/v3/sessions/{session_id}/required-context/chunk", operation_id="getRequiredContextChunk")
 def get_required_context_chunk(session_id: str, body: dict[str, Any] | None = Body(default=None)) -> dict[str, Any]:
     sid = _sid(session_id)
     payload = _payload(body)
-    contract = _validated_contract(sid, payload)
-    if not contract.get("success"):
-        return {
-            "success": False,
-            "session_id": sid,
-            "runtime_version": RUNTIME_VERSION,
-            "mode": "v3_required_context_chunk_rejected",
-            "turn_id": contract.get("turn_id"),
-            "error": contract.get("error") or "Invalid turn contract.",
-            "next_action": contract.get("next_action") or "getTurnContract",
-            "visible_scene_output_allowed": False,
-        }
     chunk_index = _requested_chunk_index(payload, default=0)
-    chunks = contract.get("required_chunks") if isinstance(contract.get("required_chunks"), list) else []
-    total = len(chunks)
-    if chunk_index < 0 or chunk_index >= total:
-        return {
-            "success": False,
-            "session_id": sid,
-            "runtime_version": RUNTIME_VERSION,
-            "mode": "v3_required_context_chunk_rejected",
-            "turn_id": contract.get("turn_id"),
-            "error": f"chunk_index {chunk_index} is outside required range 0..{max(total - 1, 0)}.",
-            "total_chunks": total,
-            "next_action": "getRequiredContextChunk" if total else "getTurnContract",
-            "next_chunk_index": 0 if total else None,
-            "visible_scene_output_allowed": False,
-        }
-    has_more = chunk_index + 1 < total
-    chunk_meta = chunks[chunk_index] if 0 <= chunk_index < total and isinstance(chunks[chunk_index], dict) else {"chunk_index": chunk_index, "chunk_type": "unknown"}
-    return {
-        "success": True,
-        "session_id": sid,
-        "runtime_version": RUNTIME_VERSION,
-        "mode": "v3_hybrid_required_context_chunk_v5",
-        "turn_id": contract.get("turn_id"),
-        "base_revision": contract.get("base_revision"),
-        "chunk_index": chunk_index,
-        "chunk_type": chunk_meta.get("chunk_type"),
-        "total_chunks": total,
-        "has_more": has_more,
-        "next_chunk_index": chunk_index + 1 if has_more else None,
-        "content": _chunk_content(sid, contract, chunk_index),
-        "next_action": "getRequiredContextChunk" if has_more else "draftThenApplyTurnResult",
-        "draft_scene_allowed": not has_more,
-        "visible_scene_output_allowed": False,
-        "after_last_chunk": "Draft internally; call applyTurnResult with this turn_id; show only the scene text returned after successful apply." if not has_more else None,
-    }
+    return _serve_context_chunk(sid, payload, chunk_index)
 
 
 @app.post("/api/v3/sessions/{session_id}/context-request", operation_id="requestContextSlice")
 def request_context_slice(session_id: str, body: dict[str, Any] | None = Body(default=None)) -> dict[str, Any]:
     sid = _sid(session_id)
     payload = _payload(body)
-    contract = _build_turn_contract(sid, payload)
-    manifest = _manifest_from_contract(contract)
+    snapshot, reused = _get_or_build_context_snapshot(sid, payload)
+    contract = _contract_from_snapshot(snapshot, reused)
+    manifest = _manifest_from_snapshot(snapshot, reused)
     return {
         "success": bool(contract.get("success")),
         "session_id": sid,
@@ -980,8 +1304,8 @@ def request_context_slice(session_id: str, body: dict[str, Any] | None = Body(de
         "turn_contract": contract,
         "required_context_manifest": manifest,
         "turn_id": contract.get("turn_id"),
-        "next_action": "getRequiredContextChunk" if contract.get("success") else contract.get("next_action"),
-        "next_chunk_index": 0 if contract.get("success") else None,
+        "next_action": manifest.get("next_action") if contract.get("success") else contract.get("next_action"),
+        "next_chunk_index": manifest.get("next_chunk_index") if contract.get("success") else None,
         "visible_scene_output_allowed": False,
     }
 
@@ -1027,7 +1351,7 @@ def get_scene_contract_action_safe(session_id: str) -> dict[str, Any]:
         "runtime_version": RUNTIME_VERSION,
         "mode": "deprecated_scene_contract_action_safe_pointer",
         "current_state": _current_state_slice(current),
-        "message": "Full scene_contract is disabled for Actions. Use getTurnContract -> getRequiredContextManifest -> getRequiredContextChunk loop.",
+        "message": "Full scene_contract is disabled for Actions. Build one snapshot through getTurnContract, then load its manifest and ordered chunks.",
         "next_action": "getTurnContract",
     }
 
@@ -1041,14 +1365,24 @@ def get_turn_packet_action_safe(session_id: str) -> dict[str, Any]:
 def get_context_audit_action_safe(session_id: str) -> dict[str, Any]:
     sid = _sid(session_id)
     current = _ensure_current(sid)
+    snapshot = base.read_session_json(CONTEXT_SNAPSHOT_FILE, sid, default={})
     return {
         "success": True,
         "session_id": sid,
         "runtime_version": RUNTIME_VERSION,
-        "mode": "v3_hybrid_context_audit",
+        "mode": "v3_single_snapshot_context_audit",
         "current_state": _current_state_slice(current),
         "pov_character_must_load": True,
         "full_scene_contract_actions_disabled": True,
+        "context_snapshot": {
+            "status": snapshot.get("status"),
+            "context_snapshot_id": snapshot.get("context_snapshot_id"),
+            "context_snapshot_sha256": snapshot.get("context_snapshot_sha256"),
+            "turn_id": snapshot.get("turn_id"),
+            "served_chunk_indices": snapshot.get("served_chunk_indices", []),
+            "next_required_chunk_index": snapshot.get("next_required_chunk_index"),
+            "all_required_chunks_served": bool(snapshot.get("all_required_chunks_served")),
+        } if isinstance(snapshot, dict) and snapshot else None,
         "turn_contract_endpoint": f"/api/v3/sessions/{sid}/turn-contract",
         "manifest_endpoint": f"/api/v3/sessions/{sid}/required-context/manifest",
         "chunk_endpoint": f"/api/v3/sessions/{sid}/required-context/chunk",

@@ -18,7 +18,7 @@ from typing import Any
 from fastapi import FastAPI
 
 APP_NAME = "akira-1206-v3"
-APP_VERSION = "0.4.0-v3-transactional-turns"
+APP_VERSION = "0.5.0-v3-single-context-snapshot"
 BASE_URL = os.getenv("PUBLIC_BASE_URL") or os.getenv("RAILWAY_PUBLIC_DOMAIN") or "http://localhost:8000"
 if BASE_URL and not BASE_URL.startswith(("http://", "https://")):
     BASE_URL = "https://" + BASE_URL
@@ -27,6 +27,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 DATA_DIR = Path(os.getenv("DATA_DIR", str(REPO_ROOT / ".data"))).resolve()
 SESSIONS_DIR = DATA_DIR / "sessions"
 TURN_RUNTIME_FILE = "state/turn_runtime.json"
+CONTEXT_SNAPSHOT_FILE = "state/context_snapshot.json"
 TRANSACTIONS_DIR = "state/transactions"
 
 _SESSION_LOCKS: dict[str, RLock] = {}

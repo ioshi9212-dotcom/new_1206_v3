@@ -19,8 +19,7 @@ from fastapi import Body
 from app import compact as base
 from app.compact import app
 
-# Register legacy apply writer and internal helpers first.
-import app.v3_full_cards_scene_contract_runtime_patch as v3_scene_contract  # noqa: F401,E402
+# Register the transactional writer, then the one active context builder.
 import app.v3_apply_turn_result_runtime_patch as v3_apply_turn_result  # noqa: F401,E402
 import app.context_request_runtime_patch as v3_context_request  # noqa: F401,E402
 
@@ -166,11 +165,12 @@ def health() -> dict[str, Any]:
         "version": RUNTIME_VERSION,
         "public_base_url": base.BASE_URL,
         "standalone_v3": True,
-        "context_pipeline": "hybrid_turn_contract_manifest_chunks",
+        "context_pipeline": "single_server_snapshot_contract_manifest_ordered_chunks",
         "knowledge_boundary": "visible_source_and_name_permission",
         "maintenance_runtime": "turn10_recovery_turn15_cleanup",
         "final_render_contract": "last_required_context_chunk",
         "turn_protocol": "pending_turn_turn_id_atomic_apply_v1",
+        "context_snapshot_protocol": "one_immutable_snapshot_per_turn_with_chunk_progress",
         "state_storage": "atomic_json_with_recoverable_multi_file_journal",
         "large_contract_actions_disabled": True,
     }
@@ -305,8 +305,8 @@ def process_turn(session_id: str, body: dict[str, Any] | None = Body(default=Non
         "next_action": "getTurnContract",
         "required_sequence": [
             "getTurnContract with this turn_id",
-            "getRequiredContextManifest with this turn_id",
-            "getRequiredContextChunk with this turn_id until has_more=false",
+            "getRequiredContextManifest from the same server snapshot",
+            "getRequiredContextChunk in numeric order until all_required_chunks_served=true",
             "draft scene internally",
             "applyTurnResult with this same turn_id",
             "show visible_scene_text only after apply status=applied",
@@ -430,7 +430,7 @@ def openapi_actions() -> dict[str, Any]:
         "info": {
             "title": "Akira 1206 v3 Actions",
             "version": RUNTIME_VERSION,
-            "description": "Transactional API: processTurn creates turn_id; context calls and applyTurnResult must use it; scene text is shown only after a successful atomic apply.",
+            "description": "Transactional API: processTurn creates turn_id; Railway freezes one context snapshot; ordered chunks and applyTurnResult use it; scene text is shown only after a successful atomic apply.",
         },
         "servers": [{"url": base.BASE_URL.rstrip("/")}],
         "paths": {
@@ -450,13 +450,13 @@ def openapi_actions() -> dict[str, Any]:
                 "get": {"operationId": "getPreflight", "summary": "Get small current frame only; do not write scene from this.", "parameters": [_session_path_param()], "responses": {"200": _response("Preflight slice")}}
             },
             "/api/v3/sessions/{session_id}/turn-contract": {
-                "post": {"operationId": "getTurnContract", "summary": "Railway decides scene needs: characters, knowledge, energy/lore/past only if triggered. Call before manifest/chunks.", "parameters": [_session_path_param()], "requestBody": {"required": False, "content": {"application/json": {"schema": turn_contract_body_schema}}}, "responses": {"200": _response("Hybrid turn contract")}}
+                "post": {"operationId": "getTurnContract", "summary": "Build or resume the one immutable Railway context snapshot for this turn_id.", "parameters": [_session_path_param()], "requestBody": {"required": True, "content": {"application/json": {"schema": turn_contract_body_schema}}}, "responses": {"200": _response("Snapshot-backed turn contract")}}
             },
             "/api/v3/sessions/{session_id}/required-context/manifest": {
-                "post": {"operationId": "getRequiredContextManifest", "summary": "Return ordered context chunks required for this turn. Then call getRequiredContextChunk from 0 until has_more=false.", "parameters": [_session_path_param()], "requestBody": {"required": False, "content": {"application/json": {"schema": manifest_body_schema}}}, "responses": {"200": _response("Required context manifest")}}
+                "post": {"operationId": "getRequiredContextManifest", "summary": "Return the frozen snapshot manifest and the next unserved chunk index.", "parameters": [_session_path_param()], "requestBody": {"required": True, "content": {"application/json": {"schema": manifest_body_schema}}}, "responses": {"200": _response("Snapshot context manifest")}}
             },
             "/api/v3/sessions/{session_id}/required-context/chunk": {
-                "post": {"operationId": "getRequiredContextChunk", "summary": "Load one chunk for this turn_id. After has_more=false, draft internally and call applyTurnResult before showing text.", "parameters": [_session_path_param()], "requestBody": {"required": True, "content": {"application/json": {"schema": chunk_body_schema}}}, "responses": {"200": _response("Required context chunk")}}
+                "post": {"operationId": "getRequiredContextChunk", "summary": "Load the next frozen chunk in numeric order. applyTurnResult stays blocked until every required chunk was served.", "parameters": [_session_path_param()], "requestBody": {"required": True, "content": {"application/json": {"schema": chunk_body_schema}}}, "responses": {"200": _response("Frozen required context chunk")}}
             },
             "/api/v3/sessions/{session_id}/context-request": {
                 "post": {"operationId": "requestContextSlice", "summary": "Legacy compatibility endpoint. Prefer getTurnContract + manifest/chunks.", "parameters": [_session_path_param()], "requestBody": {"required": False, "content": {"application/json": {"schema": context_request_body_schema}}}, "responses": {"200": _response("Context manifest pointer")}}

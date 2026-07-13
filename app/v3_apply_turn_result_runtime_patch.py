@@ -478,6 +478,33 @@ def apply_turn_result_v3(session_id: str, body: dict[str, Any] | None = Body(def
                 next_action="applyTurnResult",
             )
 
+        context_snapshot = base.read_session_json(base.CONTEXT_SNAPSHOT_FILE, sid, default={})
+        snapshot_matches = bool(
+            isinstance(context_snapshot, dict)
+            and context_snapshot.get("schema") == "context_snapshot_v1"
+            and context_snapshot.get("status") == "ready"
+            and context_snapshot.get("runtime_version") == RUNTIME_VERSION
+            and context_snapshot.get("turn_id") == turn_id
+            and int(context_snapshot.get("base_revision") or 0) == current_revision
+            and context_snapshot.get("player_input_sha256") == pending.get("player_input_sha256")
+        )
+        if not snapshot_matches:
+            return _rejected(
+                sid,
+                "No valid server-side context snapshot exists for this turn. Build it through getTurnContract.",
+                turn_id=turn_id,
+                expected_turn_id=expected_turn_id,
+                next_action="getTurnContract",
+            )
+        if not context_snapshot.get("all_required_chunks_served"):
+            return _rejected(
+                sid,
+                "Not all required context chunks were loaded in order. Scene apply is blocked.",
+                turn_id=turn_id,
+                expected_turn_id=expected_turn_id,
+                next_action="getRequiredContextChunk",
+            )
+
         new_revision = current_revision + 1
         writes: dict[str, Any] = {}
         changed: list[str] = []
@@ -524,7 +551,7 @@ def apply_turn_result_v3(session_id: str, body: dict[str, Any] | None = Body(def
 
         maintenance = _plan_turn_counter(sid, writes)
         changed.append(STORY_LINES_FILE)
-        changed.extend([base.TURN_RUNTIME_FILE, LAST_APPLY_RESULT_FILE])
+        changed.extend([base.CONTEXT_SNAPSHOT_FILE, base.TURN_RUNTIME_FILE, LAST_APPLY_RESULT_FILE])
         changed = list(dict.fromkeys(changed))
 
         if dry_run:
@@ -553,6 +580,7 @@ def apply_turn_result_v3(session_id: str, body: dict[str, Any] | None = Body(def
             "turn_number": pending.get("turn_number"),
             "base_revision": current_revision,
             "state_revision": new_revision,
+            "context_snapshot_sha256": context_snapshot.get("context_snapshot_sha256"),
             "dry_run": False,
             "visible_scene_text": text,
             "final_scene_text": text,
@@ -580,6 +608,21 @@ def apply_turn_result_v3(session_id: str, body: dict[str, Any] | None = Body(def
             "result": result,
         }
         final_runtime["updated_at"] = applied_at
+        writes[base.CONTEXT_SNAPSHOT_FILE] = {
+            "schema": "context_snapshot_v1",
+            "status": "applied",
+            "runtime_version": RUNTIME_VERSION,
+            "context_snapshot_id": context_snapshot.get("context_snapshot_id"),
+            "context_snapshot_sha256": context_snapshot.get("context_snapshot_sha256"),
+            "turn_id": turn_id,
+            "turn_number": pending.get("turn_number"),
+            "base_revision": current_revision,
+            "state_revision": new_revision,
+            "served_chunk_indices": context_snapshot.get("served_chunk_indices", []),
+            "all_required_chunks_served": True,
+            "built_at": context_snapshot.get("built_at"),
+            "applied_at": applied_at,
+        }
         writes[base.TURN_RUNTIME_FILE] = final_runtime
         writes[LAST_APPLY_RESULT_FILE] = audit_result
 
