@@ -752,6 +752,19 @@ def _knowledge_guard_override(cid: str) -> dict[str, list[str]]:
     return {"knows": [], "beliefs": [], "does_not_know": [], "speech_guard": [], "ability_boundary": []}
 
 
+def _player_control_boundary(cid: str, role: str) -> dict[str, Any]:
+    if role == "pov":
+        return {"mode": "current_pov_player_controlled"}
+    if cid == "akira":
+        return {
+            "mode": "non_pov_low_stakes_scene_continuity",
+            "allowed_without_player_input": ["brief factual/neutral answer"],
+            "must_wait_for_player": ["meaningful yes/no"],
+            "state_rule": "Never use npc_autonomy_updates.",
+        }
+    return {"mode": "npc"}
+
+
 def _character_core_card(sid: str, cid: str, role: str, needs: dict[str, bool], current: dict[str, Any]) -> dict[str, Any]:
     memory_loaded = role in ACTIVE_MEMORY_ROLES
     char_text, know_text, main_text, memory = _character_sources(sid, cid, include_memory=memory_loaded)
@@ -778,8 +791,21 @@ def _character_core_card(sid: str, cid: str, role: str, needs: dict[str, bool], 
         },
         "voice_behavior_habits": _matching_lines(char_text, CHARACTER_PATTERNS["voice"] + CHARACTER_PATTERNS["behavior"], max_lines=line_boost, max_chars=1200),
         "must_react_to_now": _matching_lines(char_text + "\n" + know_text, CHARACTER_PATTERNS["reaction"], max_lines=line_boost, max_chars=1200),
-        "response_obligation": _response_obligation(role),
-        "player_control_or_npc_rule": "POV: do not invent important Akira replies/questions/agreements." if role == "pov" else "NPC: each line must come from goal + visible source + knowledge/unknown boundary.",
+        "response_obligation": (
+            {"required": role == "addressed", "mode": "akira_low_stakes_reply_or_hold"}
+            if cid == "akira" and role != "pov"
+            else _response_obligation(role)
+        ),
+        "player_control_boundary": _player_control_boundary(cid, role),
+        "player_control_or_npc_rule": (
+            "POV"
+            if role == "pov"
+            else (
+                "Akira"
+                if cid == "akira"
+                else "NPC: each line must come from goal + visible source + knowledge/unknown boundary."
+            )
+        ),
         "energy_loaded": bool(needs.get("energy")),
         "energy_note": "Energy is omitted in this chunk because the scene did not request/trigger energy." if not needs.get("energy") else "Energy details are in energy_lore chunk.",
         "dynamic_memory_loaded": memory_loaded,
@@ -1271,6 +1297,7 @@ def _render_contract_small() -> dict[str, Any]:
             "pov_rule": "Respect POV knowledge and player control.",
             "bottom_blocks": ["Что можно сделать", "Что Акира могла бы сказать", "Мысли Акиры", "Состояние"],
             "unknown_names_rule": "Engine-known id is not visible name permission.",
+            "player_character_rule": "current POV keeps normal player-choice protection.",
         }
     return {
         "source_file": RENDER_CONTRACT_PATH,
@@ -1280,6 +1307,7 @@ def _render_contract_small() -> dict[str, Any]:
         "unknown_names_rule": "If POV/speaker does not know a name, use visible descriptor, not engine id/display_name.",
         "autonomy_rule": "Presence/arrival/delay must match npc_autonomy and ETA. Propose time_advance/event_updates/npc_autonomy_updates when they changed.",
         "missed_event_rule": "World/NPC consequences are allowed; unplayed Akira actions, thoughts, consent and motives are forbidden.",
+        "player_character_rule": "current POV keeps normal player-choice protection.",
         "bottom_blocks_rule": "Keep choice/options/status blocks; do not expose hidden lore as POV thoughts.",
     }
 
@@ -1499,6 +1527,7 @@ def _build_turn_contract(sid: str, payload: dict[str, Any]) -> dict[str, Any]:
                 "beliefs_and_suspicions", "unknown_or_forbidden", "speech_and_name_guard",
             ],
             "pov_rule": "POV full card is mandatory. Never insert Akira merely because she is the protagonist.",
+            "player_character_rule": "When Akira is present as non-POV: low stakes only.",
             "npc_rule": "Active NPC behavior must come from goal + knowledge + unknowns + reaction triggers, never generic scene convenience.",
             "autonomy_rule": "Use frozen time_context: NPCs continue their own activity offscreen, may be unavailable/delayed, and cannot cross locations before ETA.",
             "time_rule": "Propose explicit time_advance with elapsed_minutes/mode/evidence. Never rewrite current date/time directly and never move time backward.",
