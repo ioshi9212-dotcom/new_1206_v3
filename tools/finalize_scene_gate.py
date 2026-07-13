@@ -32,7 +32,7 @@ boundary_helper = '''def _player_control_boundary(cid: str, role: str) -> dict[s
             "must_wait_for_player": ["meaningful yes/no"],
             "state_rule": "Never use npc_autonomy_updates.",
         }
-    return {"mode": "npc_goal_driven"}
+    return {"mode": "npc"}
 
 
 '''
