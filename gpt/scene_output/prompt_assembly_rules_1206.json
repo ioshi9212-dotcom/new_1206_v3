@@ -1,6 +1,6 @@
 {
   "id": "prompt_assembly_rules_1206",
-  "version": "v2_time_autonomy",
+  "version": "v3_time_autonomy_akira_micro_agency",
   "purpose": "Define which prompt/output rule files must be included when API sends a scene_contract to ChatGPT.",
   "required_contract": "api_contracts/scene_contract.schema.json",
   "required_response_schema": "api_contracts/chatgpt_scene_response.schema.json",
@@ -9,6 +9,7 @@
     "ChatGPT receives already assembled scene_contract from API/builder.",
     "ChatGPT must not scan the whole repository or invent missing context.",
     "Character behavior must come from loaded full character cards and state/character_memory only.",
+    "Preserve meaningful choices for the current POV; when Akira is present as non-POV, keep her alive through low-stakes local movement, reactions and brief neutral replies without giving her a meaningful generated choice.",
     "Relationship dynamics must come only from loaded relevant relationship_pairs.",
     "Scene presence and delay must respect the frozen current_datetime plus npc_autonomy location/availability/ETA.",
     "Past files are usable only when loaded by a trigger.",
@@ -39,7 +40,9 @@
     "Do not add absent characters as active speakers.",
     "Do not teleport an NPC, arrive before ETA or freeze present NPCs through a large timeskip.",
     "Do not convert an ignored event into an unplayed POV action or motive.",
-    "Do not make major POV choices for the player.",
+    "Do not make major current-POV choices for the player.",
+    "Do not make meaningful consent, refusal, disclosure, route, force or relationship changes for Akira when she is non-POV.",
+    "Do not freeze a present Akira merely because POV belongs to another character; use only low-stakes continuity and micro-replies.",
     "Do not output all relationship pairs or all character states.",
     "Do not use missing context as if it were loaded."
   ]

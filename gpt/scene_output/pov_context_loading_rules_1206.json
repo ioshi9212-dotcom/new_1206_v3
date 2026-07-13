@@ -1,6 +1,6 @@
 {
   "id": "pov_context_loading_rules_1206",
-  "version": "v3-full-character-cards-only",
+  "version": "v4-akira-nonpov-micro-agency",
   "purpose": "Control which character cards, memories and relationship pairs are loaded depending on current POV and scene participants.",
   "default_pov": "akira",
   "core_rule": "Load full character cards and state for the active POV character and active scene participants only.",
@@ -12,6 +12,24 @@
       "Do not write footer as 'Akira can do'.",
       "Do not write thoughts as 'Akira thinks that'."
     ]
+  },
+  "akira_as_non_pov_control_boundary": {
+    "rule": "The current POV keeps normal player-choice protection. When Akira is a present non-POV character, she gains only low-stakes scene continuity, not full autonomous control.",
+    "akira_present_under_other_pov_allowed": [
+      "visible body reactions and gestures",
+      "short local movement inside the current scene",
+      "continuing movement already committed by player input/state",
+      "brief factual or neutral answer to a low-stakes question",
+      "dry comment or noncommittal deflection that preserves every meaningful option"
+    ],
+    "akira_present_under_other_pov_forbidden": [
+      "meaningful consent or refusal",
+      "promise, confession, forgiveness, trust or romance choice",
+      "important disclosure or lie",
+      "side, plan, destination, route, departure, access, treatment or risk choice",
+      "force/energy use or any meaningful plot/relationship/conflict change"
+    ],
+    "important_question_rule": "Do not leave the exchange mechanically unanswered: use a short neutral hold/deflection or visible reaction, but do not invent Akira's meaningful yes/no or decision."
   },
   "load_current_pov": [
     "Always load current POV full character cards: main.yaml, character.yaml, knowledge.yaml.",

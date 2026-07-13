@@ -360,6 +360,58 @@ def test_explicit_non_akira_pov_does_not_load_akira_as_fallback(client: TestClie
     assert base.read_json("state/calendar_runtime.json", sid, {})["npc_autonomy"]["akira"] == akira_world_state_before
 
 
+def test_non_akira_pov_keeps_akira_alive_but_preserves_her_meaningful_choices(client: TestClient) -> None:
+    sid = "non-akira-pov-akira-micro-agency-proof"
+    client.post("/api/v1/start", json={"session_id": sid})
+    _turn_id, contract, chunks = begin_ready_turn(
+        client,
+        sid,
+        "Я смотрю на Акиру и спрашиваю, ела ли она сегодня.",
+        pov_character_id="jun",
+        active_character_ids=["jun", "akira"],
+        scene_character_ids=["jun", "akira"],
+        present_character_ids=["jun", "akira"],
+        addressed_character_ids=["akira"],
+        relationship_pair_ids=["akira__jun"],
+    )
+    core_cards = {
+        cid: card
+        for chunk in chunks if chunk["chunk_type"] == "characters_core"
+        for cid, card in chunk["content"]["characters"].items()
+    }
+    render = next(
+        chunk["content"]["final_render_contract"]
+        for chunk in chunks if chunk["chunk_type"] == "location_inventory_calendar_render"
+    )
+
+    assert contract["pov_character_id"] == "jun"
+    assert contract["character_roles"] == {"jun": "pov", "akira": "addressed"}
+    assert contract["writer_card_contract"]["player_character_rule"].startswith("When Akira is present as non-POV")
+    assert core_cards["jun"]["response_obligation"]["mode"] == "player_controlled"
+    assert core_cards["jun"]["player_control_boundary"]["mode"] == "current_pov_player_controlled"
+    assert core_cards["akira"]["response_obligation"]["mode"] == "akira_low_stakes_reply_or_hold"
+    assert core_cards["akira"]["response_obligation"]["required"] is True
+    boundary = core_cards["akira"]["player_control_boundary"]
+    assert boundary["mode"] == "non_pov_low_stakes_scene_continuity"
+    assert any("brief factual/neutral answer" in item for item in boundary["allowed_without_player_input"])
+    assert any("meaningful yes/no" in item for item in boundary["must_wait_for_player"])
+    assert "never use npc_autonomy_updates" in boundary["state_rule"].lower()
+    assert "current POV keeps normal player-choice protection" in render["player_character_rule"]
+
+
+def test_scene_response_schema_checks_akira_control_in_every_pov() -> None:
+    schema = json.loads((base.REPO_ROOT / "api_contracts/chatgpt_scene_response.schema.json").read_text(encoding="utf-8"))
+    safety = schema["properties"]["safety_checks"]
+    required = set(safety["required"])
+
+    assert "no_major_pov_choice_for_player" in required
+    assert "no_major_akira_choice_for_player" in required
+    assert "akira_non_pov_actions_are_low_stakes" in required
+    assert "non_akira_pov_remains_autonomous" not in required
+    npc_updates = schema["properties"]["proposed_updates"]["properties"]["npc_autonomy_updates"]
+    assert "никогда не используют этот блок" in npc_updates["description"]
+
+
 def test_behavior_cards_keep_beliefs_out_of_facts_and_require_addressed_response(client: TestClient) -> None:
     sid = "evidence-buckets-proof"
     client.post("/api/v1/start", json={"session_id": sid})

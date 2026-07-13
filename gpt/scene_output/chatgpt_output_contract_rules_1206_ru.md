@@ -1,6 +1,6 @@
 # chatgpt_output_contract_rules_1206_ru
 
-Версия: v2-time-autonomy
+Версия: v3-time-autonomy-akira-micro-agency
 Назначение: правила ответа ChatGPT после получения `scene_contract` от API/сборщика.
 
 Этот файл не заменяет карточки персонажей и не является builder-ом. Он отвечает только за то, **как ChatGPT должен писать сцену и какие proposed updates может предложить обратно API**.
@@ -111,6 +111,15 @@ ChatGPT может активно писать только персонажей
 
 Если по сцене логично, что новый персонаж должен появиться, ChatGPT может только предложить это в `proposed_updates.scene_state_patch.active_character_changes` с причиной. API решает, подключать ли персонажа следующим ходом.
 
+### Акира как не-POV персонаж
+
+Текущий POV сохраняет обычную защиту выбора игрока. Дополнительное правило нужно для сцен, где Акира присутствует, но POV принадлежит другому персонажу.
+
+- Присутствующая в чужом POV Акира может двигаться внутри текущей сцены, реагировать и давать короткие нейтральные/фактические микро-ответы.
+- На значимый вопрос Акира может уклониться или задержать ответ без обещания, чтобы реплика NPC не зависла, но ChatGPT не придумывает за неё содержательное `да`/`нет`.
+- Согласие, отказ, обещание, признание, доверие, прощение, раскрытие, сторона, план, маршрут, риск, применение силы/энергии и значимое изменение отношений остаются за игроком.
+- Локальная микро-активность Акиры остаётся в `scene.body`; она не создаёт `npc_autonomy_updates` и сама по себе не обосновывает agreement/relationship patch.
+
 ---
 
 ## 5. Не раскрывать forbidden_context
@@ -198,6 +207,8 @@ respected_knowledge_boundaries
 no_hidden_past_without_trigger
 no_unjustified_character_arrival
 no_major_pov_choice_for_player
+no_major_akira_choice_for_player
+akira_non_pov_actions_are_low_stakes
 clock_changed_only_through_elapsed_minutes
 npc_routes_respect_eta
 missed_events_do_not_script_pov

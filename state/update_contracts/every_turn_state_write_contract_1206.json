@@ -1,6 +1,6 @@
 {
   "id": "every_turn_state_write_contract_1206",
-  "version": "v2_time_autonomy",
+  "version": "v3_time_autonomy_akira_micro_agency",
   "file_type": "state_update_contract",
   "purpose": "What applyTurnResult/state writer should update after every scene turn.",
   "write_every_turn_if_changed": [
@@ -39,6 +39,8 @@
     "do not erase existing hooks unless the scene resolved them",
     "do not patch clock fields directly; use time_advance",
     "do not move an NPC across zones without travel and ETA",
-    "do not turn a missed event into an unplayed Akira action"
+    "do not turn a missed event into an unplayed Akira action",
+    "do not encode Akira's low-stakes non-POV movement/reply as npc_autonomy",
+    "do not turn a generated neutral Akira micro-reply into agreement, commitment, important relationship delta, route change or plot choice"
   ]
 }

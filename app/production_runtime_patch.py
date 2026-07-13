@@ -202,6 +202,7 @@ def health() -> dict[str, Any]:
         "turn_protocol": "pending_turn_turn_id_atomic_apply_v1",
         "context_snapshot_protocol": "one_immutable_snapshot_per_turn_with_chunk_progress",
         "character_state_protocol": "evidence_sourced_memory_and_snapshot_scoped_relationships",
+        "player_character_protocol": "current_pov_protected_nonpov_akira_low_stakes_micro_agency",
         "world_time_protocol": "monotonic_evidence_backed_clock_and_current_day_only_calendar",
         "npc_autonomy_protocol": "offscreen_activity_location_availability_eta_and_missed_event_consequences",
         "state_storage": "atomic_json_with_recoverable_multi_file_journal",
@@ -480,7 +481,7 @@ def openapi_actions() -> dict[str, Any]:
             "target_datetime": {"type": "string"},
         }),
         "event_updates": {"type": "array", "items": object_any, "description": "Trigger/resolve/cancel a frozen calendar event with scene evidence. Missed deadlines are escalated by Railway."},
-        "npc_autonomy_updates": {"type": "array", "items": object_any, "description": "Evidence-backed NPC activity/travel/arrival/delay updates. Akira is never controlled here; travel must respect ETA."},
+        "npc_autonomy_updates": {"type": "array", "items": object_any, "description": "Evidence-backed NPC activity/travel/arrival/delay updates. Akira's permitted non-POV micro-actions stay in scene prose and never use this block; NPC travel must respect ETA."},
         "physical_continuity_patch": object_any,
         "character_memory_updates": {"type": "object", "description": "Evidence-backed events for characters whose dynamic memory was loaded in the snapshot. Never personality/card rewrites."},
         "relationship_updates": object_any,
@@ -492,7 +493,7 @@ def openapi_actions() -> dict[str, Any]:
         "info": {
             "title": "Akira 1206 v3 Actions",
             "version": RUNTIME_VERSION,
-            "description": "Transactional API: processTurn creates turn_id; Railway freezes one snapshot with exact world time, NPC activity/location/availability/ETA, evidence-bounded character memory and relevant relationship pairs. applyTurnResult atomically validates time, routes, events and state before scene text is shown.",
+            "description": "Transactional API: processTurn creates turn_id; Railway freezes one snapshot with exact world time, NPC activity/location/availability/ETA, evidence-bounded character memory, relevant relationship pairs and player-control boundaries. The current POV keeps normal player-choice protection; a present non-POV Akira receives only low-stakes scene continuity. applyTurnResult atomically validates time, routes, events and state before scene text is shown.",
         },
         "servers": [{"url": base.BASE_URL.rstrip("/")}],
         "paths": {

@@ -18,7 +18,7 @@ from typing import Any
 from fastapi import FastAPI
 
 APP_NAME = "akira-1206-v3"
-APP_VERSION = "0.7.0-v3-world-time-npc-autonomy"
+APP_VERSION = "0.7.1-v3-akira-nonpov-micro-agency"
 BASE_URL = os.getenv("PUBLIC_BASE_URL") or os.getenv("RAILWAY_PUBLIC_DOMAIN") or "http://localhost:8000"
 if BASE_URL and not BASE_URL.startswith(("http://", "https://")):
     BASE_URL = "https://" + BASE_URL

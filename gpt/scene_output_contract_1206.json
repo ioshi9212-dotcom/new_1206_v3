@@ -1,6 +1,6 @@
 {
   "id": "scene_output_contract_1206",
-  "version": "v4_time_autonomy_writer_contract",
+  "version": "v5_time_autonomy_akira_micro_agency",
   "purpose": "Последний блок context_slice. По нему GPT собирает финальную видимую сцену после всех state/calendar/location/character/knowledge блоков.",
   "must_be_last_writer_instruction": true,
   "visible_scene_must_start_with_header": true,
@@ -21,7 +21,9 @@
   ],
   "prose_rules": [
     "Пиши сцену в третьем лице, кинематографично и компактно.",
-    "NPC активны, но не забирают управление POV.",
+    "Не дописывать за игрока значимые действия и реплики текущего POV.",
+    "Если Акира присутствует как не-POV персонаж, она может двигаться внутри сцены, реагировать и давать короткие нейтральные/фактические микро-ответы, чтобы диалог не зависал.",
+    "Когда Акира не POV, не придумывать за неё согласие, отказ, обещание, признание, раскрытие, сторону, план, маршрут, риск, силу/энергию или изменение сюжета/отношений; на значимый вопрос допустима только некоммитящая реакция, сохраняющая выбор.",
     "NPC presence, departure, delay and arrival must match frozen npc_autonomy location/availability/ETA.",
     "If the scene passes time or changes an offscreen NPC/event, return evidence-backed time_advance/event_updates/npc_autonomy_updates.",
     "A missed event may alter the world or another NPC, never invent an Akira action, thought, consent or motive.",
@@ -41,6 +43,7 @@
     "Варианты не считаются действием, пока игрок не выбрал.",
     "Состояние: только актуальные изменения тела, позиции, предметов, опасности.",
     "Отношения: только если напряжение/доверие реально изменились в сцене; не перечислять всех подряд.",
-    "Если сцена короткая/напряжённая, нижний блок можно сократить, но не терять формат."
+    "Если сцена короткая/напряжённая, нижний блок можно сократить, но не терять формат.",
+    "Микро-реплика Акиры в чужом POV не считается выбором игрока и не должна закрывать значимую развилку."
   ]
 }

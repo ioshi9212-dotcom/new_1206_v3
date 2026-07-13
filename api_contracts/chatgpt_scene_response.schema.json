@@ -24,7 +24,7 @@
       "properties": {
         "body": {
           "type": "string",
-          "description": "Основной текст сцены. Пишется в третьем лице ограниченного POV. Не делает важный выбор за POV."
+          "description": "Основной текст сцены. Пишется в третьем лице ограниченного POV. POV задаёт камеру/знания; значимые решения Акиры всегда остаются за игроком. В чужом POV допустимы только её низкорисковые локальные действия и микро-реплики."
         },
         "footer": {
           "type": "object",
@@ -98,6 +98,7 @@
         },
         "npc_autonomy_updates": {
           "type": "array",
+          "description": "Только изменения мирового состояния автономных NPC. Разрешённые микро-действия Акиры в чужом POV остаются текстом сцены и никогда не используют этот блок.",
           "items": { "$ref": "#/$defs/npc_autonomy_update" },
           "default": []
         },
@@ -118,14 +119,18 @@
         "respected_knowledge_boundaries",
         "no_hidden_past_without_trigger",
         "no_unjustified_character_arrival",
-        "no_major_pov_choice_for_player"
+        "no_major_pov_choice_for_player",
+        "no_major_akira_choice_for_player",
+        "akira_non_pov_actions_are_low_stakes"
       ],
       "properties": {
         "used_only_loaded_characters": { "type": "boolean" },
         "respected_knowledge_boundaries": { "type": "boolean" },
         "no_hidden_past_without_trigger": { "type": "boolean" },
         "no_unjustified_character_arrival": { "type": "boolean" },
-        "no_major_pov_choice_for_player": { "type": "boolean" },
+        "no_major_pov_choice_for_player": { "type": "boolean", "description": "За текущий POV не придуман значимый выбор игрока." },
+        "no_major_akira_choice_for_player": { "type": "boolean", "description": "Когда Акира не POV, за неё не придуманы значимое согласие/отказ, обязательство, раскрытие, маршрут, сила или изменение отношений." },
+        "akira_non_pov_actions_are_low_stakes": { "type": "boolean", "description": "Любое сгенерированное действие/слово Акиры в чужом POV локально, нейтрально/некоммитяще и сохраняет все значимые варианты игрока." },
         "clock_changed_only_through_elapsed_minutes": { "type": "boolean" },
         "npc_routes_respect_eta": { "type": "boolean" },
         "missed_events_do_not_script_pov": { "type": "boolean" },

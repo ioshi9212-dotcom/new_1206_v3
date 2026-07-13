@@ -1,7 +1,7 @@
 {
   "id": "scene_state_patch_rules_1206",
   "file_type": "scene_state_update_rules",
-  "version": "2.0.0-time-autonomy",
+  "version": "2.1.0-time-autonomy-akira-micro-agency",
   "status": "active",
   "purpose": "Как обновлять состояние текущей сцены после ответа ChatGPT.",
   "allowed_scene_state_updates": [
@@ -49,6 +49,7 @@
   "location_rules": {
     "update_requires": "clear movement or scene cut",
     "privacy_change": "changing location changes NPC presence rules and character loading for next turn",
-    "npc_cross_zone": "requires start_travel plus arrive at/after ETA; current scene cannot carry NPC automatically"
+    "npc_cross_zone": "requires start_travel plus arrive at/after ETA; current scene cannot carry NPC automatically",
+    "akira_non_pov_local_movement": "movement inside the current scene/location is allowed as prose; a new destination, departure, cross-zone move or following someone requires protected player input or a previously committed action"
   }
 }

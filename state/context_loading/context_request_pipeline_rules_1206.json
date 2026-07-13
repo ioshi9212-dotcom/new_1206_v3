@@ -1,6 +1,6 @@
 {
   "id": "context_request_pipeline_rules_1206",
-  "version": "1206_v3_time_autonomy_snapshot_v4",
+  "version": "1206_v3_time_autonomy_snapshot_v5_akira_micro_agency",
   "status": "single_server_snapshot_with_evidence_state_time_and_autonomy_active",
   "purpose": "Build one immutable Railway context snapshot per protected turn_id, then serve only small scene-needed semantic chunks from it.",
   "pipeline": [
@@ -41,6 +41,8 @@
     "Client-returned turn_contract, state slices and chunk lists are never a source of truth.",
     "Do not split raw huge cards into chunks; derive bounded semantic writer-card blocks instead.",
     "POV full-card sources are mandatory; never insert Akira as a protagonist fallback.",
+    "The current POV keeps normal player-choice protection.",
+    "If Akira is present as non-POV, her writer card permits low-stakes local movement, reactions and neutral/noncommittal micro-replies, but never meaningful consent, refusal, disclosure, route, force or relationship choice.",
     "Every active NPC writer card includes goal, voice/behavior, reaction triggers, known facts and active unknowns.",
     "A directly addressed full NPC must respond somehow but never has to agree, obey, leave or disclose.",
     "Background participants may react briefly without taking focus; referenced/absent characters do not witness the scene.",
