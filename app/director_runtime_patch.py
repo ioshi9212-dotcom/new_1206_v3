@@ -25,18 +25,38 @@ MAX_PACKET_CHARS = 42000
 # User-facing aliases. Keep this intentionally boring and explicit.
 CHARACTER_ALIASES: dict[str, str] = {
     "акира": "akira",
+    "акиры": "akira",
+    "акире": "akira",
+    "акиру": "akira",
+    "акирой": "akira",
     "кира": "akira",
     "akira": "akira",
     "юкира": "akira",
     "джун": "jun",
+    "джуна": "jun",
+    "джуну": "jun",
+    "джуном": "jun",
     "jun": "jun",
     "джун картер": "jun",
     "ирэй": "irey",
     "ирей": "irey",
+    "ирэя": "irey",
+    "ирея": "irey",
+    "ирэю": "irey",
+    "ирею": "irey",
+    "ирэем": "irey",
+    "иреем": "irey",
     "irey": "irey",
     "эмма": "emma",
+    "эммы": "emma",
+    "эмме": "emma",
+    "эмму": "emma",
+    "эммой": "emma",
     "emma": "emma",
     "райден": "raiden",
+    "райдена": "raiden",
+    "райдену": "raiden",
+    "райденом": "raiden",
     "рейден": "raiden",
     "рейдон": "raiden",
     "рэйдон": "raiden",
@@ -44,6 +64,12 @@ CHARACTER_ALIASES: dict[str, str] = {
     "rayden": "raiden",
     "рей": "ray",
     "рэй": "ray",
+    "рея": "ray",
+    "рэя": "ray",
+    "рею": "ray",
+    "рэю": "ray",
+    "реем": "ray",
+    "рэем": "ray",
     "ray": "ray",
     "хару": "haru",
     "haru": "haru",
@@ -250,10 +276,21 @@ def _infer_forbidden(text: str, explicit: Any = None) -> list[str]:
     forbidden: list[str] = []
     n = _normalize(text)
 
-    # If the user wrote a free-form "без ..." sentence, keep the most important
-    # known sensitive terms as explicit locks.
+    # A mentioned character or object is not automatically forbidden.  Only
+    # treat it as a lock when it occurs in an explicit negative clause.
     for term in DEFAULT_FORBIDDEN_TERMS:
-        if _normalize(term) in n and term not in forbidden:
+        term_n = _normalize(term)
+        negative = any(
+            marker in n
+            for marker in (
+                f"без {term_n}",
+                f"не добавляй {term_n}",
+                f"не вводи {term_n}",
+                f"не используй {term_n}",
+                f"не упоминай {term_n}",
+            )
+        )
+        if negative and term not in forbidden:
             forbidden.append(term)
 
     if any(token in n for token in ("без новых", "новые люди", "не вводи", "не добавляй персонажей")):

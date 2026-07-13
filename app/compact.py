@@ -15,7 +15,7 @@ from typing import Any
 from fastapi import FastAPI
 
 APP_NAME = "akira-1206-v3"
-APP_VERSION = "0.3.191-v3-context-slice-size-guard"
+APP_VERSION = "0.3.192-v3-runtime-consistency-fix"
 BASE_URL = os.getenv("PUBLIC_BASE_URL") or os.getenv("RAILWAY_PUBLIC_DOMAIN") or "http://localhost:8000"
 if BASE_URL and not BASE_URL.startswith(("http://", "https://")):
     BASE_URL = "https://" + BASE_URL
@@ -103,8 +103,11 @@ def read_text(path: str, session_id: str | None = None, default: str = "") -> st
     candidates: list[Path] = []
     if session_id:
         candidates.append(_session_path(path, session_id))
-    candidates.append(DATA_DIR / str(path).lstrip("/"))
+    # Repository content is the current canon after every deploy.  The seeded
+    # DATA_DIR copy is only a fallback; otherwise an old Railway Volume shadows
+    # later GitHub updates forever.
     candidates.append(_repo_path(path))
+    candidates.append(DATA_DIR / str(path).lstrip("/"))
     for candidate in candidates:
         try:
             if candidate.exists() and candidate.is_file():
@@ -256,16 +259,29 @@ def default_current_state(session_id: str, overrides: dict[str, Any] | None = No
     return data
 
 
-def initialize_start_session(session_id: str | None, overrides: dict[str, Any] | None = None) -> dict[str, Any]:
+def initialize_start_session(
+    session_id: str | None,
+    overrides: dict[str, Any] | None = None,
+    *,
+    reset_dynamic_state: bool = False,
+) -> dict[str, Any]:
     """Write canonical start current_state/calendar into the per-session volume."""
+    sid = safe_session_id(session_id)
+    if reset_dynamic_state:
+        # A fresh start must not retain scene history, character memory,
+        # relationships, or maintenance counters from an older playthrough.
+        shutil.rmtree(_session_root(sid), ignore_errors=True)
     sid = ensure_session(session_id)
     current = default_current_state(sid, overrides)
     current["updated_at"] = datetime.utcnow().isoformat()
     write_json("state/current_state.json", current, session_id=sid)
     write_json("state/calendar_runtime.json", start_calendar_runtime(), session_id=sid)
-    existing_history = read_json("state/scene_history.json", session_id=sid, default=None)
-    if not isinstance(existing_history, list):
+    if reset_dynamic_state:
         write_json("state/scene_history.json", [], session_id=sid)
+    else:
+        existing_history = read_json("state/scene_history.json", session_id=sid, default=None)
+        if not isinstance(existing_history, list):
+            write_json("state/scene_history.json", [], session_id=sid)
     write_json("state/story_lines.json", {
         "schema": "story_lines_runtime_v3",
         "turn_counter": 0,

@@ -251,21 +251,16 @@ def director_openapi_actions(server_url: str | None = None) -> dict[str, Any]:
     }
 
 
-def _replace_openapi_actions_route() -> None:
-    # production_runtime_patch already registered /openapi-actions.json. Remove it
-    # so Custom GPT receives Director Mode schema only.
-    app.router.routes = [route for route in app.router.routes if getattr(route, "path", None) != "/openapi-actions.json"]
+def _register_director_openapi_route() -> None:
+    """Expose Director Mode separately without hiding the live-game schema."""
+    app.router.routes = [
+        route for route in app.router.routes
+        if getattr(route, "path", None) != "/openapi-director-actions.json"
+    ]
 
-    @app.get("/openapi-actions.json", include_in_schema=False)
+    @app.get("/openapi-director-actions.json", include_in_schema=False)
     def director_openapi_actions_route(request: Request) -> dict[str, Any]:
         return director_openapi_actions(_public_base_url(request))
 
-    def custom_openapi() -> dict[str, Any]:
-        return director_openapi_actions(_public_base_url(None))
 
-    app.openapi_schema = None
-    app.openapi = custom_openapi  # type: ignore[assignment]
-    app.version = DIRECTOR_RUNTIME_VERSION  # type: ignore[attr-defined]
-
-
-_replace_openapi_actions_route()
+_register_director_openapi_route()

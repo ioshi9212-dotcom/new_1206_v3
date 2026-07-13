@@ -127,5 +127,3 @@ linked_files:
   knowledge: "characters/akira/knowledge.yaml"
   hidden_past: "characters/akira/past.yaml"
   dynamic_memory: "state/character_memory/akira.json"
-  status_metrics: "state/akira_status_metrics.json"
-  progress_state: "state/akira_progress_state.json"

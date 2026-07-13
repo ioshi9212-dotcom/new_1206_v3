@@ -128,7 +128,11 @@ def create_session(body: dict[str, Any] | None = Body(default=None)) -> dict[str
     reset = bool(payload.get("reset"))
 
     if reset or start_command or not isinstance(current_state, dict):
-        current_state = base.initialize_start_session(sid, _merge_start_overrides(payload, player_input=player_input or "начнем"))
+        current_state = base.initialize_start_session(
+            sid,
+            _merge_start_overrides(payload, player_input=player_input or "начнем"),
+            reset_dynamic_state=bool(reset or start_command),
+        )
 
     return {
         "success": True,
@@ -167,7 +171,11 @@ def process_turn(session_id: str, body: dict[str, Any] | None = Body(default=Non
     start_command = base.is_start_command(player_input)
 
     if start_command:
-        current_state = base.initialize_start_session(sid, _merge_start_overrides(payload, player_input=player_input))
+        current_state = base.initialize_start_session(
+            sid,
+            _merge_start_overrides(payload, player_input=player_input),
+            reset_dynamic_state=True,
+        )
     else:
         if not player_input:
             return {

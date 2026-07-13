@@ -4,9 +4,8 @@ from importlib import import_module
 from app.production_runtime_patch import app
 
 # Director Mode is a script-drafting layer on top of the existing runtime.
-# It does not delete old live-game endpoints from the app; it only registers
-# director endpoints and replaces /openapi-actions.json with a smaller
-# Custom GPT Actions schema that exposes Director Mode only.
+# Live gameplay remains at /openapi-actions.json; Director Mode has its own
+# schema at /openapi-director-actions.json.
 #
 # Important: do NOT use `import app.director_runtime_patch` here.
 # In this module it would rebind the exported name `app` to the Python package

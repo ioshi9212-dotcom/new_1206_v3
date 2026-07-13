@@ -17,7 +17,9 @@
     "raiden__haru": "state/relationship_pairs/raiden__haru.json",
     "miki__alex": "state/relationship_pairs/miki__alex.json",
     "ray__yuna": "state/relationship_pairs/ray__yuna.json",
-    "jun__ray": "state/relationship_pairs/jun__ray.json"
+    "jun__ray": "state/relationship_pairs/jun__ray.json",
+    "jun__irey": "state/relationship_pairs/jun__irey.json",
+    "jun__emma": "state/relationship_pairs/jun__emma.json"
   },
   "critical_rule": [
     "Do not load all Akira pairs by default.",

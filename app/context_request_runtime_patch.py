@@ -584,7 +584,11 @@ def _lore_slice(sid: str, needs: dict[str, bool]) -> dict[str, Any]:
     if not needs.get("lore"):
         return {"loaded": False, "note": "Lore omitted: no current trigger."}
     # Keep this intentionally tiny; character knowledge still controls disclosure.
-    files = ["canon_lore/index.yaml", "canon_lore/core/world_background.yaml", "canon_lore/world/echo.yaml", "canon_lore/world/kairos.yaml"]
+    files = [
+        "canon_lore/core/01_world_public_history_ru.yaml",
+        "canon_lore/core/02_kairos_public_ru.yaml",
+        "canon_lore/core/03_energy_public_rules_ru.yaml",
+    ]
     result = []
     for path in files:
         text = _read_text(path, sid)
