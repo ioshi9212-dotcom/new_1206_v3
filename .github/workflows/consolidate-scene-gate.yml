@@ -1,0 +1,33 @@
+name: Consolidate scene gate
+
+on:
+  push:
+    branches:
+      - agent/scene-validation-rewrite-gate
+
+permissions:
+  contents: write
+
+jobs:
+  consolidate:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/scene-validation-rewrite-gate
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Consolidate into existing runtime owner
+        run: python tools/consolidate_scene_gate.py
+      - name: Compile consolidated runtime
+        run: python -m compileall -q app tests
+      - name: Commit consolidation
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Consolidate scene validation into apply writer"
+          git push origin HEAD:agent/scene-validation-rewrite-gate
