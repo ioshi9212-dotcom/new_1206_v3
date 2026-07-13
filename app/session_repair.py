@@ -227,7 +227,10 @@ def _target_from_snapshot(
         "mode": mode,
         "full_image": full_image,
         "target_revision": target_revision,
-        "requires_allow_turn_loss": target_revision < current_revision,
+        "requires_allow_turn_loss": (
+            target_revision < current_revision
+            and transition_kind != "rollback"
+        ),
     }
 
 
@@ -308,11 +311,42 @@ def _expected_hashes(target: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _normalized_engine_hash(
+    path: str,
+    data: Any,
+    *,
+    mode: str | None,
+) -> str:
+    if mode != "rollback" or not isinstance(data, dict):
+        return _sha(data)
+    normalized = dict(data)
+    if path == CURRENT_STATE_FILE:
+        for key in (
+            "state_revision",
+            "last_applied_turn_id",
+            "last_rollback_turn_id",
+            "updated_at",
+        ):
+            normalized.pop(key, None)
+    elif path == TURN_RUNTIME_FILE:
+        for key in (
+            "state_revision",
+            "pending_turn",
+            "next_turn_number",
+            "last_rollback",
+            "last_state_transition",
+            "updated_at",
+        ):
+            normalized.pop(key, None)
+    return _sha(normalized)
+
+
 def _target_mismatches(
     session_id: str,
     target: dict[str, Any],
     *,
     ignore: set[str] | None = None,
+    normalize_mode: str | None = None,
 ) -> list[dict[str, Any]]:
     ignore = ignore or set()
     expected = _expected_hashes(target)
@@ -324,10 +358,29 @@ def _target_mismatches(
     for path in sorted(paths):
         if path in ignore:
             continue
+        expected_image = target["images"].get(path)
         expected_hash = expected.get(path)
+        if (
+            normalize_mode
+            and isinstance(expected_image, dict)
+            and expected_image.get("exists")
+        ):
+            expected_hash = _normalized_engine_hash(
+                path,
+                expected_image.get("data"),
+                mode=normalize_mode,
+            )
         try:
             image = _file_image(session_id, path)
-            actual_hash = image.get("sha256") if image.get("exists") else None
+            actual_hash = (
+                _normalized_engine_hash(
+                    path,
+                    image.get("data"),
+                    mode=normalize_mode,
+                )
+                if image.get("exists")
+                else None
+            )
             unreadable = False
         except ValueError:
             actual_hash = None
@@ -380,7 +433,16 @@ def integrity_report(session_id: str) -> dict[str, Any]:
         )
         if candidate:
             ignore = {TURN_RUNTIME_FILE, CONTEXT_SNAPSHOT_FILE} if pending else set()
-            mismatches = _target_mismatches(sid, candidate, ignore=ignore)
+            normalize_mode = None
+            if "rollback_before_image" in candidate["mode"]:
+                ignore.add(CONTEXT_SNAPSHOT_FILE)
+                normalize_mode = "rollback"
+            mismatches = _target_mismatches(
+                sid,
+                candidate,
+                ignore=ignore,
+                normalize_mode=normalize_mode,
+            )
             if mismatches:
                 _append_unique_error(errors, {
                     "code": "canonical_hash_mismatch",

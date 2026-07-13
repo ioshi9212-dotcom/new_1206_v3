@@ -19,6 +19,7 @@ from fastapi import Body
 
 from app import compact as base
 from app import session_recovery
+from app import session_repair
 from app.compact import app
 
 # Register the transactional writer, then the one active context builder.
@@ -212,6 +213,8 @@ def health() -> dict[str, Any]:
         "revision_snapshot_protocol": "before_image_per_applied_turn_with_hashes",
         "rollback_protocol": "last_applied_turn_inverse_transaction_monotonic_revision",
         "automatic_recovery_audit": "prepared_write_and_delete_replay_with_persistent_log",
+        "quarantine_repair_protocol": "explicit_confirm_revision_guard_full_forensic_quarantine",
+        "trusted_snapshot_protocol": "full_before_and_after_state_images_with_self_hash",
         "large_contract_actions_disabled": True,
     }
 
@@ -219,13 +222,21 @@ def health() -> dict[str, Any]:
 @app.get("/api/v1/sessions/{session_id}/integrity", operation_id="getSessionIntegrity")
 def get_session_integrity(session_id: str) -> dict[str, Any]:
     """Recover any prepared transaction, then report canonical state consistency."""
-    return session_recovery.integrity_report(session_id)
+    return session_repair.integrity_report(session_id)
 
 
 @app.post("/api/v1/sessions/{session_id}/rollback-last-turn", operation_id="rollbackLastTurn")
 def rollback_last_turn(session_id: str, body: dict[str, Any] | None = Body(default=None)) -> dict[str, Any]:
     """Undo only the latest canonical apply through its captured inverse image."""
     return session_recovery.rollback_last_turn(session_id, body)
+
+
+@app.post("/api/v1/sessions/{session_id}/repair-state", operation_id="repairSessionState")
+def repair_session_state(
+    session_id: str,
+    body: dict[str, Any] | None = Body(default=None),
+) -> dict[str, Any]:
+    return session_repair.repair_session_state(session_id, body)
 
 
 @app.post("/api/v1/sessions", operation_id="createSession")
@@ -518,12 +529,20 @@ def openapi_actions() -> dict[str, Any]:
         "expected_state_revision": {"type": "integer", "description": "Optional optimistic concurrency guard from getSessionIntegrity."},
         "reason": {"type": "string", "description": "Short audit reason for undoing the last applied turn."},
     })
+    repair_body_schema = _object_schema({
+        "expected_state_revision": {"type": "integer", "description": "Required revision copied from getSessionIntegrity."},
+        "confirm_repair": {"type": "boolean", "description": "Must be true; prevents silent repair."},
+        "discard_pending_turn": {"type": "boolean", "description": "Explicitly allow repair to clear a pending player turn."},
+        "allow_turn_loss": {"type": "boolean", "description": "Explicitly allow fallback to an older or legacy snapshot."},
+        "dry_run": {"type": "boolean", "description": "Validate the repair plan without writing quarantine or state."},
+        "reason": {"type": "string", "description": "Short audit reason stored with quarantine and repair history."},
+    }, required=["expected_state_revision", "confirm_repair"])
     return {
         "openapi": "3.1.0",
         "info": {
             "title": "Akira 1206 v3 Actions",
             "version": RUNTIME_VERSION,
-            "description": "Transactional API: processTurn creates turn_id; Railway freezes one snapshot with exact world time, NPC activity/location/availability/ETA, evidence-bounded character memory, relevant relationship pairs and player-control boundaries. applyTurnResult validates and atomically commits the scene together with a rollback snapshot and change journal. getSessionIntegrity recovers interrupted transactions and verifies hashes; rollbackLastTurn restores the latest inverse image as a new monotonic revision.",
+            "description": "Transactional API: applyTurnResult commits the scene with full trusted before/after state images. getSessionIntegrity detects revision, hash and JSON damage. repairSessionState requires explicit confirmation and the exact revision, preserves the damaged state in quarantine, then restores a trusted snapshot under a new monotonic revision. Legacy fallback never loses a turn without allow_turn_loss=true.",
         },
         "servers": [{"url": base.BASE_URL.rstrip("/")}],
         "paths": {
@@ -544,6 +563,9 @@ def openapi_actions() -> dict[str, Any]:
             },
             "/api/v1/sessions/{session_id}/rollback-last-turn": {
                 "post": {"operationId": "rollbackLastTurn", "summary": "Undo the latest applied turn from its before-image as a new monotonic state revision.", "parameters": [_session_path_param()], "requestBody": {"required": False, "content": {"application/json": {"schema": rollback_body_schema}}}, "responses": {"200": _response("Rollback result")}}
+            },
+            "/api/v1/sessions/{session_id}/repair-state": {
+                "post": {"operationId": "repairSessionState", "summary": "After getSessionIntegrity reports damage, quarantine the current JSON and restore a trusted snapshot with explicit revision/confirmation guards.", "parameters": [_session_path_param()], "requestBody": {"required": True, "content": {"application/json": {"schema": repair_body_schema}}}, "responses": {"200": _response("Quarantine repair result")}}
             },
             "/api/v3/sessions/{session_id}/preflight": {
                 "get": {"operationId": "getPreflight", "summary": "Get small current frame only; do not write scene from this.", "parameters": [_session_path_param()], "responses": {"200": _response("Preflight slice")}}
