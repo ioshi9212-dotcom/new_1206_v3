@@ -28,9 +28,9 @@ boundary_helper = '''def _player_control_boundary(cid: str, role: str) -> dict[s
     if cid == "akira":
         return {
             "mode": "non_pov_low_stakes_scene_continuity",
-            "allowed_without_player_input": ["brief factual/neutral answer or local reaction without a choice"],
-            "must_wait_for_player": ["meaningful yes/no or other important choice"],
-            "state_rule": "Never use npc_autonomy_updates for Akira.",
+            "allowed_without_player_input": ["brief factual/neutral answer"],
+            "must_wait_for_player": ["meaningful yes/no"],
+            "state_rule": "Never use npc_autonomy_updates.",
         }
     return {"mode": "npc_goal_driven"}
 
@@ -45,25 +45,25 @@ context = replace_once(
 context = replace_once(
     context,
     '        "response_obligation": _response_obligation(role),\n        "player_control_or_npc_rule": "POV: do not invent important Akira replies/questions/agreements." if role == "pov" else "NPC: each line must come from goal + visible source + knowledge/unknown boundary.",\n',
-    '        "response_obligation": (\n            {"required": role == "addressed", "mode": "akira_low_stakes_reply_or_hold"}\n            if cid == "akira" and role != "pov"\n            else _response_obligation(role)\n        ),\n        "player_control_boundary": _player_control_boundary(cid, role),\n        "player_control_or_npc_rule": (\n            "Current POV: player controls important words, decisions and meaning."\n            if role == "pov"\n            else (\n                "Non-POV Akira: low-stakes continuity only; meaningful choices wait for player input."\n                if cid == "akira"\n                else "NPC: each line must come from goal + visible source + knowledge/unknown boundary."\n            )\n        ),\n',
+    '        "response_obligation": (\n            {"required": role == "addressed", "mode": "akira_low_stakes_reply_or_hold"}\n            if cid == "akira" and role != "pov"\n            else _response_obligation(role)\n        ),\n        "player_control_boundary": _player_control_boundary(cid, role),\n        "player_control_or_npc_rule": (\n            "POV choices stay with the player."\n            if role == "pov"\n            else (\n                "Non-POV Akira: low stakes only."\n                if cid == "akira"\n                else "NPC: each line must come from goal + visible source + knowledge/unknown boundary."\n            )\n        ),\n',
     "core card control boundary",
 )
 context = replace_once(
     context,
     '            "unknown_names_rule": "Engine-known id is not visible name permission.",\n',
-    '            "unknown_names_rule": "Engine-known id is not visible name permission.",\n            "player_character_rule": "The current POV keeps normal player-choice protection; non-POV Akira gets low-stakes continuity only.",\n',
+    '            "unknown_names_rule": "Engine-known id is not visible name permission.",\n            "player_character_rule": "current POV keeps normal player-choice protection.",\n',
     "fallback render player rule",
 )
 context = replace_once(
     context,
     '        "missed_event_rule": "World/NPC consequences are allowed; unplayed Akira actions, thoughts, consent and motives are forbidden.",\n        "bottom_blocks_rule": "Keep choice/options/status blocks; do not expose hidden lore as POV thoughts.",\n',
-    '        "missed_event_rule": "World/NPC consequences are allowed; unplayed Akira actions, thoughts, consent and motives are forbidden.",\n        "player_character_rule": "The current POV keeps normal player-choice protection; non-POV Akira gets low-stakes continuity only.",\n        "bottom_blocks_rule": "Keep choice/options/status blocks; do not expose hidden lore as POV thoughts.",\n',
+    '        "missed_event_rule": "World/NPC consequences are allowed; unplayed Akira actions, thoughts, consent and motives are forbidden.",\n        "player_character_rule": "current POV keeps normal player-choice protection.",\n        "bottom_blocks_rule": "Keep choice/options/status blocks; do not expose hidden lore as POV thoughts.",\n',
     "render player rule",
 )
 context = replace_once(
     context,
     '            "pov_rule": "POV full card is mandatory. Never insert Akira merely because she is the protagonist.",\n            "npc_rule": "Active NPC behavior must come from goal + knowledge + unknowns + reaction triggers, never generic scene convenience.",\n',
-    '            "pov_rule": "POV full card is mandatory. Never insert Akira merely because she is the protagonist.",\n            "player_character_rule": "When Akira is present as non-POV, allow low-stakes continuity; meaningful choices wait for player input.",\n            "npc_rule": "Active NPC behavior must come from goal + knowledge + unknowns + reaction triggers, never generic scene convenience.",\n',
+    '            "pov_rule": "POV full card is mandatory. Never insert Akira merely because she is the protagonist.",\n            "player_character_rule": "When Akira is present as non-POV: low stakes only.",\n            "npc_rule": "Active NPC behavior must come from goal + knowledge + unknowns + reaction triggers, never generic scene convenience.",\n',
     "writer card player rule",
 )
 write("app/context_request_runtime_patch.py", context)
