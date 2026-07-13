@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import subprocess
 
 ROOT = Path(__file__).resolve().parents[1]
 VERSION = "0.8.0-v3-scene-validation-rewrite-gate"
@@ -23,12 +24,10 @@ def replace_once(text: str, old: str, new: str, label: str) -> str:
 
 
 context_path = ROOT / "app/context_request_runtime_patch.py"
-raw = context_path.read_bytes()
-start = raw.find(b'"""Hybrid manifest/chunk context pipeline')
-if start < 0:
-    raise RuntimeError("context runtime canonical header not found")
-if start:
-    context_path.write_bytes(raw[start:])
+context_path.write_bytes(subprocess.check_output([
+    "git", "show",
+    "8488cbb3ba8cc2a68aa480a615b1b88cd1f3c13e:app/context_request_runtime_patch.py",
+]))
 context_path.read_text(encoding="utf-8")
 
 compact = read("app/compact.py")
