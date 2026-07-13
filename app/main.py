@@ -3,6 +3,10 @@ from importlib import import_module
 
 from app.production_runtime_patch import app
 
+# The live-game scene gate must be registered after the transactional writer and
+# context builder, but before Director Mode adds its separate endpoints.
+import_module("app.scene_validation_runtime_patch")
+
 # Director Mode is a script-drafting layer on top of the existing runtime.
 # Live gameplay remains at /openapi-actions.json; Director Mode has its own
 # schema at /openapi-director-actions.json.
