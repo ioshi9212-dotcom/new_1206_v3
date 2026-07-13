@@ -3,3 +3,5 @@ __pycache__/
 .pytest_cache/
 .audit-venv/
 .data/
+pytest-output.txt
+*-pytest-output.txt
