@@ -1,6 +1,6 @@
 # chatgpt_output_contract_rules_1206_ru
 
-Версия: v1
+Версия: v2-time-autonomy
 Назначение: правила ответа ChatGPT после получения `scene_contract` от API/сборщика.
 
 Этот файл не заменяет карточки персонажей и не является builder-ом. Он отвечает только за то, **как ChatGPT должен писать сцену и какие proposed updates может предложить обратно API**.
@@ -49,6 +49,9 @@ player_options:
 
 proposed_updates:
   scene_state_patch
+  time_advance
+  event_updates
+  npc_autonomy_updates
   character_memory_patches
   relationship_patches
   new_session_npcs
@@ -78,6 +81,19 @@ state/character_memory/akira.json обновлён
 ```
 
 Любое изменение состояния — только предложение. API проверяет и применяет его через `apply_turn_result`.
+
+Для прошедшего времени нельзя предлагать новую дату напрямую. Использовать:
+
+```txt
+time_advance:
+  elapsed_minutes
+  mode
+  reason
+  evidence
+  target_datetime  # опциональная самопроверка
+```
+
+Если NPC начал путь, прибыл, задержался, сменил занятие или доступность вне кадра — добавить `npc_autonomy_updates`. Если event сработал/закрылся — `event_updates`. Если ничего не прошло и не изменилось, эти блоки можно оставить пустыми: время не двигается автоматически.
 
 ---
 
@@ -182,6 +198,9 @@ respected_knowledge_boundaries
 no_hidden_past_without_trigger
 no_unjustified_character_arrival
 no_major_pov_choice_for_player
+clock_changed_only_through_elapsed_minutes
+npc_routes_respect_eta
+missed_events_do_not_script_pov
 ```
 
 Если пункт не выполняется, сцену нужно переписать до ответа. Не ставить `true`, если правило нарушено.

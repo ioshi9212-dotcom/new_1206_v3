@@ -1,6 +1,6 @@
 {
   "id": "every_turn_state_write_contract_1206",
-  "version": "v1",
+  "version": "v2_time_autonomy",
   "file_type": "state_update_contract",
   "purpose": "What applyTurnResult/state writer should update after every scene turn.",
   "write_every_turn_if_changed": [
@@ -15,7 +15,10 @@
     "new agreements, promises, refusals, threats",
     "relationship changes if a real shift happened",
     "protected moments if a phrase/action strongly affected a character",
-    "open hooks for future scenes"
+    "open hooks for future scenes",
+    "elapsed world time with evidence, if any",
+    "NPC activity/location/availability/ETA changes, if any",
+    "calendar event transitions and missed-event world consequences, if any"
   ],
   "write_to_character_memory_when": [
     "a character personally saw/heard/learned something",
@@ -33,6 +36,9 @@
     "do not record calendar/rules as character knowledge",
     "do not give absent characters knowledge of the scene",
     "do not invent emotional changes not supported by scene",
-    "do not erase existing hooks unless the scene resolved them"
+    "do not erase existing hooks unless the scene resolved them",
+    "do not patch clock fields directly; use time_advance",
+    "do not move an NPC across zones without travel and ETA",
+    "do not turn a missed event into an unplayed Akira action"
   ]
 }

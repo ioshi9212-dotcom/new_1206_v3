@@ -1,12 +1,12 @@
 {
   "id": "scene_output_contract_1206",
-  "version": "v3_final_writer_contract",
+  "version": "v4_time_autonomy_writer_contract",
   "purpose": "Последний блок context_slice. По нему GPT собирает финальную видимую сцену после всех state/calendar/location/character/knowledge блоков.",
   "must_be_last_writer_instruction": true,
   "visible_scene_must_start_with_header": true,
   "header_template": [
     "🌘 Восточный сектор · 1206 г., {current_date}",
-    "🕒 {current_day_phase} · 📍 {current_location_text}",
+    "🕒 {current_time} · {current_day_phase} · 📍 {current_location_text}",
     "⚙️ Активное состояние сцены: {current_tension_or_goal}",
     "✦ POV: {pov_display_name} · {visible_state}",
     "🧥 {current_outfit_if_relevant}",
@@ -22,6 +22,9 @@
   "prose_rules": [
     "Пиши сцену в третьем лице, кинематографично и компактно.",
     "NPC активны, но не забирают управление POV.",
+    "NPC presence, departure, delay and arrival must match frozen npc_autonomy location/availability/ETA.",
+    "If the scene passes time or changes an offscreen NPC/event, return evidence-backed time_advance/event_updates/npc_autonomy_updates.",
+    "A missed event may alter the world or another NPC, never invent an Akira action, thought, consent or motive.",
     "Не добавлять щелчок, скрип, стук или другой звук двери/пола, если контекст говорит, что дверь/пол открываются/движутся бесшумно.",
     "Не переносить engine_state / POV-visible items в знание NPC без seen/heard/source в knowledge_boundary.",
     "Believes/assumes are not facts. does_not_know и forbidden_as_fact нельзя произносить как знание."

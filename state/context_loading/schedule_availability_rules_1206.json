@@ -1,8 +1,8 @@
 {
   "id": "schedule_availability_rules_1206",
-  "version": "v1_placeholder",
-  "status": "empty_schedule_files_allowed",
-  "purpose": "Railway must check schedule before allowing characters in scenes. Schedule files are placeholders until filled by author.",
+  "version": "v2_time_autonomy",
+  "status": "active",
+  "purpose": "Railway resolves world time, NPC activity, location, travel ETA and availability before a named character may enter a scene.",
   "schedule_files": [
     "schedule/base_weekly_schedule.yaml",
     "schedule/base_daily_routine.yaml",
@@ -11,30 +11,141 @@
     "schedule/staff_shifts.yaml",
     "schedule/location_activity_windows.yaml"
   ],
-  "if_schedule_empty": {
-    "rule": "Do not invent exact raids/classes. Use only current_state and explicit scene data. Ambient NPCs may appear only from location rules, not named main characters.",
-    "main_characters": "available only if current_state/scene_contract explicitly places them there",
-    "ambient_staff": "allowed only by location tag and broad activity window if defined"
+  "clock": {
+    "canonical_field": "state/calendar_runtime.json.current_datetime",
+    "format": "YYYY-MM-DDTHH:MM",
+    "monotonic": true,
+    "normal_context_scope": "current_day_only",
+    "phase_boundaries": {
+      "00:00-04:59": "глубокая ночь",
+      "05:00-07:59": "раннее утро",
+      "08:00-11:59": "утро",
+      "12:00-15:59": "день",
+      "16:00-18:59": "вечер",
+      "19:00-22:59": "поздний вечер",
+      "23:00-23:59": "поздняя ночь"
+    }
+  },
+  "time_advance": {
+    "default": "zero minutes; Railway never advances time merely because another turn was generated",
+    "small_step": "minutes for played dialogue or continuous action, with scene evidence",
+    "medium_step": "tens of minutes for played/summarized meal, training, work or travel",
+    "large_step": "more than two hours or a date boundary only after explicit player intent to wait, sleep, rest, travel or timeskip",
+    "required_fields": [
+      "elapsed_minutes",
+      "mode",
+      "reason",
+      "evidence"
+    ],
+    "forbidden": [
+      "negative elapsed time",
+      "direct current_date/current_time patch",
+      "skipping an unresolved immediate answer window",
+      "using a timeskip to invent Akira's action, consent, thought or motive"
+    ]
+  },
+  "travel_and_presence": {
+    "canonical_fields": [
+      "npc_autonomy.<id>.location_id",
+      "npc_autonomy.<id>.availability",
+      "npc_autonomy.<id>.earliest_arrival_at"
+    ],
+    "rules": [
+      "set_activity and set_availability never change location",
+      "cross-location NPC movement requires start_travel followed by arrive",
+      "arrive is rejected before earliest_arrival_at",
+      "a travel delay extends ETA instead of teleporting the character",
+      "a newly present NPC must have committed present/nearby/available state in the scene location zone",
+      "remote contact must be explicit and does not make the character physically present"
+    ]
   },
   "availability_statuses": [
     "present",
     "nearby",
-    "off_base",
-    "on_raid",
-    "training",
-    "lesson",
-    "medical",
+    "available",
+    "busy",
+    "offscreen",
+    "in_transit",
     "resting",
     "sleeping",
-    "duty",
-    "unknown"
-  ],
-  "deny_if": [
+    "medical",
     "on_raid",
     "off_base",
-    "lesson_elsewhere",
-    "training_elsewhere",
-    "medical_unavailable",
-    "sleeping_and_no_scene_reason"
-  ]
+    "unavailable"
+  ],
+  "local_presence_denied_when": [
+    "in_transit",
+    "off_base",
+    "unavailable",
+    "sleeping without a played reason to wake/contact",
+    "different location zone without committed arrival"
+  ],
+  "npc_autonomy": {
+    "principle": "Named NPCs keep doing their own work, recovery, social or personal actions offscreen and may delay, refuse, leave or solve a problem without the player.",
+    "decision_source": [
+      "full character card",
+      "current personal goal and limits",
+      "personal knowledge boundary",
+      "committed location/activity/availability",
+      "triggered current-day event"
+    ],
+    "forbidden": [
+      "choosing any action for Akira",
+      "making an absent NPC witness the current scene",
+      "turning calendar or runtime state into NPC knowledge",
+      "forcing an NPC to abandon duties because the player wants them available"
+    ]
+  },
+  "raider_accountability": {
+    "raider_character_ids": [
+      "alex",
+      "miki",
+      "raiden",
+      "haru",
+      "shiro",
+      "kai"
+    ],
+    "accountability_window": "from the character's waking/available morning block until 16:00 local world time",
+    "core_rule": "If a raider is not on a raid, the day before 16:00 must contain at least one substantive block. Nobody forces continuous training.",
+    "substantive_categories": [
+      "raid",
+      "duty",
+      "training",
+      "lesson",
+      "maintenance",
+      "medical_assignment",
+      "recovery_plan",
+      "admin"
+    ],
+    "allowed_ordinary_categories": [
+      "meal",
+      "rest",
+      "sleep",
+      "social",
+      "personal_time"
+    ],
+    "ordinary_rule": "Eating, resting, talking and sleeping are legitimate parts of a day; they become an accountability concern only if the whole available block reaches 16:00 without any substantive or justified recovery block.",
+    "exempt_availability": [
+      "unavailable",
+      "unavailable_until_1206-09-21"
+    ],
+    "consequence": "Railway creates a pending staff observation, not punishment. Staff may form a conclusion or report it to Ray only if someone witnessed or reviewed the day in-world.",
+    "training_effect": "Regular training lowers overload risk; missing it raises risk but never guarantees an outburst.",
+    "lesson_effect": "Lessons lower tactical errors, casualties and uncontrolled emotional/energy reactions; skipping them raises risk but does not predetermine failure."
+  },
+  "ignored_event_rules": {
+    "deadline_behavior": "An unresolved open/triggered event with due_at at or before the new clock becomes missed and produces world pressure.",
+    "allowed_consequences": [
+      "another NPC proceeds with their own goal",
+      "a quiet opportunity closes",
+      "an NPC becomes less available or more suspicious",
+      "a task worsens, moves or is handled offscreen",
+      "staff records a pending observation"
+    ],
+    "forbidden_consequences": [
+      "inventing what Akira did during the missed window",
+      "inventing Akira's consent, refusal, thought, emotion or motive",
+      "giving absent characters knowledge of an unseen scene"
+    ]
+  }
 }

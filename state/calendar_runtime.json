@@ -1,25 +1,164 @@
 {
-  "schema": "calendar_runtime_v3_start_state",
+  "schema": "calendar_runtime_v3_time_autonomy",
   "project": "akira-1206-v3",
+  "current_datetime": "1206-08-31T23:40",
   "current_date": "1206-08-31",
+  "current_time": "23:40",
   "current_day_file": "calendar/days/1206-08-31.yaml",
   "current_day_phase": "поздняя ночь",
   "time_of_day": "поздняя ночь",
+  "elapsed_world_minutes": 0,
+  "time_revision": 0,
   "active_window": "start_pressure_node",
   "current_beat_id": "house_pressure_open",
   "completed_beat_ids": [],
   "skipped_beat_ids": [],
   "introduced_character_ids": [],
   "pending_events": [
-    "player_reaction_window",
-    "raiden_delayed_conditional_arrival",
-    "samuel_people_search_and_pursuit_latency",
-    "east_sector_contact_if_branch_reaches_it"
+    {
+      "event_id": "player_reaction_window",
+      "status": "open",
+      "opened_at": "1206-08-31T23:40",
+      "due_at": "1206-08-31T23:55",
+      "blocks_large_timeskip": true,
+      "player_choice_required": true,
+      "on_miss": {
+        "world_consequence": "Давление в доме усиливается: Эмма и Ирэй действуют по своим целям, а окно тихой реакции закрывается.",
+        "forbidden_player_inference": "Не решать за Акиру, что она сделала или почему промолчала."
+      }
+    },
+    {
+      "event_id": "raiden_delayed_conditional_arrival",
+      "status": "dormant",
+      "trigger": "scene_confirmed_kairos_energy_spike",
+      "min_delay_minutes": 18,
+      "character_id": "raiden",
+      "required_autonomy_action": "start_travel",
+      "origin_location_id": "east_coast",
+      "destination_location_id": "jun_house_exterior",
+      "rule": "Райден не знает об Акире или доме; он может отреагировать только на подтверждённый выброс и прибыть не раньше ETA."
+    },
+    {
+      "event_id": "samuel_people_search_and_pursuit_latency",
+      "status": "dormant",
+      "trigger": "scene_or_calendar_confirmed_search_started",
+      "min_delay_minutes": 35,
+      "rule": "Люди Самуэля приходят позже; если цель ушла, последствия могут остаться за кадром без мгновенной погони."
+    },
+    {
+      "event_id": "east_sector_contact_if_branch_reaches_it",
+      "status": "dormant",
+      "trigger": "branch_reaches_east_sector_contact",
+      "rule": "Календарь давит на маршрут, но не пишет действие, согласие или выбор Акиры."
+    }
   ],
+  "npc_autonomy": {
+    "akira": {
+      "control": "player",
+      "location_id": "jun_house_akira_room",
+      "activity": "player_controlled_scene",
+      "activity_category": "player_controlled",
+      "availability": "present",
+      "since": "1206-08-31T23:40"
+    },
+    "jun": {
+      "control": "autonomous_npc",
+      "location_id": "jun_house_ground_floor",
+      "activity": "protect_akira_and_stall_intruders",
+      "activity_category": "scene_duty",
+      "availability": "present",
+      "since": "1206-08-31T23:40"
+    },
+    "emma": {
+      "control": "autonomous_npc",
+      "location_id": "jun_house_ground_floor",
+      "activity": "pressure_jun_and_follow_own_mission",
+      "activity_category": "scene_goal",
+      "availability": "present",
+      "since": "1206-08-31T23:40"
+    },
+    "irey": {
+      "control": "autonomous_npc",
+      "location_id": "jun_house_ground_floor",
+      "activity": "contain_emma_and_assess_visible_risk",
+      "activity_category": "scene_goal",
+      "availability": "present",
+      "since": "1206-08-31T23:40"
+    },
+    "raiden": {
+      "control": "autonomous_npc",
+      "location_id": "east_coast",
+      "activity": "alone_by_the_sea",
+      "activity_category": "personal_time",
+      "availability": "offscreen",
+      "since": "1206-08-31T23:40"
+    },
+    "ray": {
+      "control": "autonomous_npc",
+      "location_id": "east_sector_command",
+      "activity": "command_duty",
+      "activity_category": "duty",
+      "availability": "busy",
+      "since": "1206-08-31T23:40"
+    },
+    "alex": {
+      "control": "autonomous_npc",
+      "location_id": "east_sector",
+      "activity": "night_routine_unresolved",
+      "activity_category": "private_time",
+      "availability": "offscreen",
+      "since": "1206-08-31T23:40"
+    },
+    "miki": {
+      "control": "autonomous_npc",
+      "location_id": "east_sector",
+      "activity": "night_routine_unresolved",
+      "activity_category": "private_time",
+      "availability": "offscreen",
+      "since": "1206-08-31T23:40"
+    },
+    "shiro": {
+      "control": "autonomous_npc",
+      "location_id": "east_sector",
+      "activity": "night_routine_or_duty",
+      "activity_category": "private_time",
+      "availability": "offscreen",
+      "since": "1206-08-31T23:40"
+    },
+    "kai": {
+      "control": "autonomous_npc",
+      "location_id": "east_sector",
+      "activity": "night_routine_unresolved",
+      "activity_category": "private_time",
+      "availability": "offscreen",
+      "since": "1206-08-31T23:40"
+    },
+    "yuna": {
+      "control": "autonomous_npc",
+      "location_id": "east_sector_medical",
+      "activity": "medical_shift_or_rest_by_scene_source",
+      "activity_category": "medical",
+      "availability": "offscreen",
+      "since": "1206-08-31T23:40"
+    },
+    "haru": {
+      "control": "autonomous_npc",
+      "location_id": "off_base_unknown",
+      "activity": "outside_current_story_area",
+      "activity_category": "off_base",
+      "availability": "unavailable_until_1206-09-21",
+      "since": "1206-08-31T23:40"
+    }
+  },
+  "activity_ledger": [],
+  "staff_observations": [],
+  "world_consequences": [],
   "rules": [
     "Calendar defines world pressure and consequences, not Akira's scripted actions.",
     "Normal play loads only the current day file.",
     "Conditional arrivals require plausible in-world time and distance.",
-    "Sleep/rest/timeskip should jump to the next meaningful beat."
+    "Sleep/rest/timeskip should jump to the next meaningful beat.",
+    "World time never moves backward and advances only through an evidence-backed applied turn.",
+    "NPCs keep their own location, activity, availability and ETA outside the current scene."
   ]
 }

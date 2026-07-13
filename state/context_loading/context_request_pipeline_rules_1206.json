@@ -1,7 +1,7 @@
 {
   "id": "context_request_pipeline_rules_1206",
-  "version": "1206_v3_evidence_behavior_snapshot_v3",
-  "status": "single_server_snapshot_with_evidence_state_active",
+  "version": "1206_v3_time_autonomy_snapshot_v4",
+  "status": "single_server_snapshot_with_evidence_state_time_and_autonomy_active",
   "purpose": "Build one immutable Railway context snapshot per protected turn_id, then serve only small scene-needed semantic chunks from it.",
   "pipeline": [
     {
@@ -12,7 +12,7 @@
     {
       "step": 2,
       "name": "turn_contract_snapshot",
-      "description": "getTurnContract validates the pending turn_id, selects full-card characters, scene-active memories and only relevant relationship pairs, then freezes one server-side context snapshot."
+      "description": "getTurnContract validates the pending turn_id, selects full-card characters, scene-active memories and relevant relationship pairs, freezes exact world time, current-day events and NPC location/activity/availability/ETA in one server-side snapshot."
     },
     {
       "step": 3,
@@ -32,7 +32,7 @@
     {
       "step": 6,
       "name": "apply_turn_result",
-      "description": "GPT sends the same turn_id, final scene and evidence-backed proposed_updates; API rejects unsourced facts, absent-character memory and unloaded-pair changes, then atomically persists valid state and authorizes visible output."
+      "description": "GPT sends the same turn_id, final scene and evidence-backed proposed_updates; API rejects unsourced facts, absent-character memory, unloaded-pair changes, clock rewrites, teleport/early arrival and Akira-scripted missed-event consequences, then atomically persists valid state."
     }
   ],
   "hard_rules": [
@@ -47,13 +47,18 @@
     "Static personality and voice never change through dynamic state; only mood, goals, tactics, memory and relationships may evolve.",
     "Confirmed facts, observations, heard reports, beliefs and mistakes are separate evidence buckets.",
     "Calendar, prompt, runtime rules and hidden lore never become NPC knowledge.",
+    "World time is frozen in the snapshot and advances only through applied elapsed_minutes with mode/reason/evidence.",
+    "Normal play exposes only the current calendar day; future calendar files are not dumped into a turn.",
+    "A locally unavailable/in-transit/different-zone NPC is reference-only unless an explicit remote contact or committed arrival permits more.",
+    "Large timeskips must resolve every currently present NPC so the cast cannot freeze around the player.",
+    "Missed events change world pressure or autonomous NPC state; they never invent Akira's action, thought, consent or motive.",
     "Dynamic character memory may be written only for memory_character_ids loaded in this snapshot.",
     "Relationship pairs load only when both participants are scene-active or an active character explicitly thinks/speaks about the pair.",
     "Relationship updates are evidence-backed bounded deltas for snapshot-loaded pairs only.",
     "applyTurnResult is blocked until every required snapshot chunk was served in order.",
     "State active slice is always needed, but full state history is not.",
     "Location basic slice is needed for every scene.",
-    "Schedule slice is needed for base/public/location movement scenes; schedule files may be empty placeholders until filled.",
+    "The bounded schedule/autonomy slice is always present; exact raids still require calendar/state/author evidence.",
     "Character full cards remain authoritative in repo; context slices are derived from full cards, not from separate runtime summaries.",
     "Railway may deny a requested block if calendar, location, knowledge, energy, or past triggers do not allow it."
   ]

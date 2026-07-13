@@ -88,6 +88,19 @@
           "items": { "$ref": "#/$defs/relationship_patch" },
           "default": []
         },
+        "time_advance": {
+          "$ref": "#/$defs/time_advance"
+        },
+        "event_updates": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/event_update" },
+          "default": []
+        },
+        "npc_autonomy_updates": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/npc_autonomy_update" },
+          "default": []
+        },
         "new_session_npcs": {
           "type": "array",
           "description": "Только если новый NPC стал значимым: получил имя, роль, повторяемость или важное свидетельство.",
@@ -113,6 +126,9 @@
         "no_hidden_past_without_trigger": { "type": "boolean" },
         "no_unjustified_character_arrival": { "type": "boolean" },
         "no_major_pov_choice_for_player": { "type": "boolean" },
+        "clock_changed_only_through_elapsed_minutes": { "type": "boolean" },
+        "npc_routes_respect_eta": { "type": "boolean" },
+        "missed_events_do_not_script_pov": { "type": "boolean" },
         "notes": { "type": "array", "items": { "type": "string" } }
       }
     },
@@ -187,6 +203,52 @@
           },
           "default": []
         }
+      }
+    },
+    "time_advance": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["elapsed_minutes", "mode", "reason", "evidence"],
+      "properties": {
+        "elapsed_minutes": { "type": "integer", "minimum": 0, "maximum": 43200 },
+        "mode": {
+          "type": "string",
+          "enum": ["scene", "travel", "meal", "training", "rest", "sleep", "wait", "timeskip"]
+        },
+        "reason": { "type": "string", "minLength": 1 },
+        "evidence": { "type": "string", "minLength": 1 },
+        "target_datetime": { "type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}$" }
+      }
+    },
+    "event_update": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["event_id", "action", "evidence"],
+      "properties": {
+        "event_id": { "type": "string", "minLength": 1 },
+        "action": { "type": "string", "enum": ["trigger", "resolve", "cancel", "escalate"] },
+        "evidence": { "type": "string", "minLength": 1 }
+      }
+    },
+    "npc_autonomy_update": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["character_id", "action", "evidence"],
+      "properties": {
+        "character_id": { "type": "string", "not": { "const": "akira" } },
+        "action": {
+          "type": "string",
+          "enum": ["set_activity", "record_activity", "start_travel", "arrive", "delay", "set_availability", "complete_activity"]
+        },
+        "activity": { "type": "string" },
+        "category": { "type": "string" },
+        "duration_minutes": { "type": "integer", "minimum": 1 },
+        "from_location_id": { "type": "string" },
+        "destination_location_id": { "type": "string" },
+        "travel_minutes": { "type": "integer", "minimum": 1, "maximum": 1440 },
+        "delay_minutes": { "type": "integer", "minimum": 1, "maximum": 720 },
+        "availability": { "type": "string" },
+        "evidence": { "type": "string", "minLength": 1 }
       }
     },
     "character_memory_patch": {

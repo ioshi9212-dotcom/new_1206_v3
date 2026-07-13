@@ -46,6 +46,22 @@ def load_all_context(
     return contract, manifest, chunks
 
 
+def begin_ready_turn(
+    client: TestClient,
+    sid: str,
+    player_input: str,
+    **turn_fields: object,
+) -> tuple[str, dict, list[dict]]:
+    turn = client.post(
+        f"/api/v1/sessions/{sid}/turn",
+        json={"player_input": player_input, **turn_fields},
+    ).json()
+    assert turn["success"] is True
+    turn_id = turn["turn_id"]
+    contract, _manifest, chunks = load_all_context(client, sid, turn_id)
+    return turn_id, contract, chunks
+
+
 def test_live_and_director_schemas_are_separate(client: TestClient) -> None:
     live = client.get("/openapi-actions.json").json()
     director = client.get("/openapi-director-actions.json").json()
@@ -309,6 +325,7 @@ def test_one_context_snapshot_freezes_writer_cards_and_server_sources(client: Te
 def test_explicit_non_akira_pov_does_not_load_akira_as_fallback(client: TestClient) -> None:
     sid = "non-akira-pov-proof"
     client.post("/api/v1/start", json={"session_id": sid})
+    akira_world_state_before = base.read_json("state/calendar_runtime.json", sid, {})["npc_autonomy"]["akira"]
     turn = client.post(
         f"/api/v1/sessions/{sid}/turn",
         json={
@@ -330,6 +347,17 @@ def test_explicit_non_akira_pov_does_not_load_akira_as_fallback(client: TestClie
     assert contract["pov_loaded"] is True
     assert contract["character_ids"] == ["jun", "emma"]
     assert "akira" not in contract["character_ids"]
+
+    _contract, _manifest, _chunks = load_all_context(client, sid, turn["turn_id"])
+    applied = client.post(
+        f"/api/v1/sessions/{sid}/apply-turn-result",
+        json={
+            "turn_id": turn["turn_id"],
+            "visible_scene_text": "Джун выдержал паузу. Эмма не отвела взгляда."
+        },
+    ).json()
+    assert applied["status"] == "applied"
+    assert base.read_json("state/calendar_runtime.json", sid, {})["npc_autonomy"]["akira"] == akira_world_state_before
 
 
 def test_behavior_cards_keep_beliefs_out_of_facts_and_require_addressed_response(client: TestClient) -> None:
@@ -879,3 +907,464 @@ def test_thirty_transactional_turns_keep_one_revision_per_scene(client: TestClie
     assert len({event["event_id"] for event in memory["memory_events"]}) == 30
     assert len(relationship["relationship_events"]) == 30
     assert relationship["metrics"]["tension"] == 30
+
+
+def test_world_clock_rejects_backward_and_direct_time_rewrites(client: TestClient) -> None:
+    sid = "clock-guard-proof"
+    client.post("/api/v1/start", json={"session_id": sid})
+    turn_id, _contract, _chunks = begin_ready_turn(client, sid, "Я остаюсь у двери и слушаю ещё немного.")
+
+    backward = client.post(
+        f"/api/v1/sessions/{sid}/apply-turn-result",
+        json={
+            "turn_id": turn_id,
+            "visible_scene_text": "Внизу всё ещё говорили.",
+            "time_advance": {
+                "elapsed_minutes": -1,
+                "mode": "scene",
+                "reason": "ошибка",
+                "evidence": "ошибка"
+            },
+        },
+    ).json()
+    assert backward["status"] == "rejected"
+    assert backward["validation_errors"][0]["code"] == "time_cannot_move_backward"
+
+    direct = client.post(
+        f"/api/v1/sessions/{sid}/apply-turn-result",
+        json={
+            "turn_id": turn_id,
+            "visible_scene_text": "Внизу всё ещё говорили.",
+            "current_state_patch": {"current_datetime": "1206-09-10T12:00"},
+        },
+    ).json()
+    assert direct["status"] == "rejected"
+    assert direct["validation_errors"][0]["code"] == "direct_clock_patch_blocked"
+
+    applied = client.post(
+        f"/api/v1/sessions/{sid}/apply-turn-result",
+        json={
+            "turn_id": turn_id,
+            "visible_scene_text": "За дверью прошла короткая тяжёлая пауза.",
+            "time_advance": {
+                "elapsed_minutes": 5,
+                "mode": "scene",
+                "reason": "короткая пауза в продолжающемся разговоре",
+                "evidence": "Сцена показывает несколько минут ожидания."
+            },
+        },
+    ).json()
+    assert applied["status"] == "applied"
+    assert applied["world_update_summary"]["elapsed_world_minutes"] == 5
+    assert base.read_json("state/calendar_runtime.json", sid, {})["current_datetime"] == "1206-08-31T23:45"
+    assert base.read_json("state/current_state.json", sid, {})["current_datetime"] == "1206-08-31T23:45"
+
+
+def test_missed_event_changes_world_without_scripting_akira(client: TestClient) -> None:
+    sid = "missed-event-proof"
+    client.post("/api/v1/start", json={"session_id": sid})
+    turn_id, _contract, _chunks = begin_ready_turn(client, sid, "Я медленно проверяю окно и не отвечаю людям внизу.")
+    applied = client.post(
+        f"/api/v1/sessions/{sid}/apply-turn-result",
+        json={
+            "turn_id": turn_id,
+            "visible_scene_text": "Пока Акира проверяла раму, голоса внизу стали жёстче.",
+            "time_advance": {
+                "elapsed_minutes": 16,
+                "mode": "scene",
+                "reason": "осмотр окна и развитие конфликта внизу",
+                "evidence": "В сцене проходит достаточно времени, чтобы тихое окно реакции закрылось."
+            },
+        },
+    ).json()
+    assert applied["status"] == "applied"
+    runtime = base.read_json("state/calendar_runtime.json", sid, {})
+    event = next(item for item in runtime["pending_events"] if item["event_id"] == "player_reaction_window")
+    consequence = runtime["world_consequences"][-1]
+    assert event["status"] == "missed"
+    assert consequence["player_action_inferred"] is False
+    assert consequence["player_thought_inferred"] is False
+    assert consequence["character_knowledge_created"] is False
+    assert "Акира" not in consequence["summary"]
+
+
+def test_explicit_sleep_timeskip_updates_date_phase_and_current_day_only(client: TestClient) -> None:
+    sid = "timeskip-proof"
+    client.post("/api/v1/start", json={"session_id": sid})
+    turn_id, _contract, _chunks = begin_ready_turn(
+        client,
+        sid,
+        "Я закрываю дверь, ложусь спать и пропускаю время до утра.",
+        time_intent={"mode": "sleep", "explicit": True, "requested_elapsed_minutes": 500},
+    )
+    frozen = client.post(
+        f"/api/v1/sessions/{sid}/apply-turn-result",
+        json={
+            "turn_id": turn_id,
+            "visible_scene_text": "Ночь просто исчезла, а все остались ждать на тех же местах.",
+            "current_state_patch": {
+                "active_character_ids": ["akira"],
+                "scene_character_ids": ["akira"],
+                "present_character_ids": ["akira"]
+            },
+            "time_advance": {
+                "elapsed_minutes": 500,
+                "mode": "sleep",
+                "reason": "явный сон и переход к утру",
+                "evidence": "Игрок прямо выбрал сон и пропуск времени до утра."
+            },
+            "event_updates": [{
+                "event_id": "player_reaction_window",
+                "action": "resolve",
+                "evidence": "Игрок закрыл дверь и выбрал не продолжать немедленное взаимодействие."
+            }]
+        },
+    ).json()
+    assert frozen["status"] == "rejected"
+    assert any(error["code"] == "large_timeskip_freezes_present_npcs" for error in frozen["validation_errors"])
+
+    body = {
+        "turn_id": turn_id,
+        "visible_scene_text": "Ночь прошла. Серый утренний свет лёг на край стола.",
+        "current_state_patch": {
+            "active_character_ids": ["akira"],
+            "scene_character_ids": ["akira"],
+            "present_character_ids": ["akira"]
+        },
+        "time_advance": {
+            "elapsed_minutes": 500,
+            "mode": "sleep",
+            "reason": "явный сон и переход к утру",
+            "evidence": "Игрок прямо выбрал сон и пропуск времени до утра.",
+            "target_datetime": "1206-09-01T08:00"
+        },
+        "event_updates": [{
+            "event_id": "player_reaction_window",
+            "action": "resolve",
+            "evidence": "Игрок закрыл дверь и выбрал не продолжать немедленное взаимодействие."
+        }],
+        "npc_autonomy_updates": [
+            {
+                "character_id": "jun",
+                "action": "set_activity",
+                "activity": "deal_with_house_pressure_offscreen",
+                "category": "scene_duty",
+                "availability": "offscreen",
+                "evidence": "После закрытия двери Джун продолжил собственное противостояние внизу."
+            },
+            {
+                "character_id": "emma",
+                "action": "set_activity",
+                "activity": "continue_mission_offscreen",
+                "category": "scene_goal",
+                "availability": "offscreen",
+                "evidence": "Эмма не остаётся ждать игрока и продолжает свою задачу."
+            },
+            {
+                "character_id": "irey",
+                "action": "set_activity",
+                "activity": "contain_risk_offscreen",
+                "category": "scene_goal",
+                "availability": "offscreen",
+                "evidence": "Ирэй продолжает действовать по своей цели вне комнаты Акиры."
+            }
+        ]
+    }
+    applied = client.post(f"/api/v1/sessions/{sid}/apply-turn-result", json=body).json()
+    assert applied["status"] == "applied"
+    runtime = base.read_json("state/calendar_runtime.json", sid, {})
+    current = base.read_json("state/current_state.json", sid, {})
+    assert runtime["current_datetime"] == current["current_datetime"] == "1206-09-01T08:00"
+    assert runtime["current_day_phase"] == "утро"
+    assert runtime["current_day_file"] == "calendar/days/1206-09-01.yaml"
+    assert "1206-09-02.yaml" not in json.dumps(runtime, ensure_ascii=False)
+
+    replay = client.post(f"/api/v1/sessions/{sid}/apply-turn-result", json=body).json()
+    assert replay["idempotent_replay"] is True
+    assert base.read_json("state/calendar_runtime.json", sid, {})["elapsed_world_minutes"] == 500
+
+
+def test_raiden_trigger_travel_eta_and_delayed_arrival(client: TestClient) -> None:
+    sid = "raiden-eta-proof"
+    client.post("/api/v1/start", json={"session_id": sid})
+    first_id, _contract, _chunks = begin_ready_turn(client, sid, "Чужая энергия внизу резко рвёт тишину.")
+    started = client.post(
+        f"/api/v1/sessions/{sid}/apply-turn-result",
+        json={
+            "turn_id": first_id,
+            "visible_scene_text": "Выброс прошёл сквозь дом. Далеко у моря Райден поднял голову и двинулся к мотоциклу.",
+            "time_advance": {
+                "elapsed_minutes": 2,
+                "mode": "scene",
+                "reason": "короткий энергетический выброс и реакция вне кадра",
+                "evidence": "Сцена подтверждает чужой кайросский выброс."
+            },
+            "event_updates": [
+                {
+                    "event_id": "player_reaction_window",
+                    "action": "resolve",
+                    "evidence": "Сцена перешла из тихого окна в открытый энергетический кризис."
+                },
+                {
+                    "event_id": "raiden_delayed_conditional_arrival",
+                    "action": "trigger",
+                    "evidence": "Райден почувствовал подтверждённый чужой кайросский выброс, не зная об Акире."
+                }
+            ],
+            "npc_autonomy_updates": [{
+                "character_id": "raiden",
+                "action": "start_travel",
+                "from_location_id": "east_coast",
+                "destination_location_id": "jun_house_exterior",
+                "travel_minutes": 18,
+                "evidence": "Райден едет проверять направление выброса как опытный рейдер."
+            }]
+        },
+    ).json()
+    assert started["status"] == "applied"
+    state = base.read_json("state/calendar_runtime.json", sid, {})["npc_autonomy"]["raiden"]
+    assert state["availability"] == "in_transit"
+    assert state["earliest_arrival_at"] == "1206-09-01T00:00"
+
+    second_id, _contract, _chunks = begin_ready_turn(client, sid, "Жду ещё немного, прислушиваясь к дороге.")
+    early = client.post(
+        f"/api/v1/sessions/{sid}/apply-turn-result",
+        json={
+            "turn_id": second_id,
+            "visible_scene_text": "У дома появился мотоцикл.",
+            "time_advance": {
+                "elapsed_minutes": 10,
+                "mode": "wait",
+                "reason": "ожидание",
+                "evidence": "Проходит десять минут."
+            },
+            "npc_autonomy_updates": [{
+                "character_id": "raiden",
+                "action": "arrive",
+                "evidence": "Райден доехал до источника выброса."
+            }]
+        },
+    ).json()
+    assert early["status"] == "rejected"
+    assert early["validation_errors"][0]["code"] == "arrival_before_eta"
+
+    arrived = client.post(
+        f"/api/v1/sessions/{sid}/apply-turn-result",
+        json={
+            "turn_id": second_id,
+            "visible_scene_text": "Только к полуночи звук мотоцикла дошёл до улицы у дома.",
+            "time_advance": {
+                "elapsed_minutes": 18,
+                "mode": "wait",
+                "reason": "ожидание правдоподобного времени дороги",
+                "evidence": "Игрок ждёт, пока проходит полный минимальный путь."
+            },
+            "npc_autonomy_updates": [{
+                "character_id": "raiden",
+                "action": "arrive",
+                "destination_location_id": "jun_house_exterior",
+                "availability": "nearby",
+                "evidence": "Райден завершил путь после ETA и остановился у района выброса."
+            }]
+        },
+    ).json()
+    assert arrived["status"] == "applied"
+    state = base.read_json("state/calendar_runtime.json", sid, {})["npc_autonomy"]["raiden"]
+    assert state["location_id"] == "jun_house_exterior"
+    assert state["availability"] == "nearby"
+    assert "earliest_arrival_at" not in state
+
+
+def test_unavailable_npc_is_reference_only_and_cannot_be_teleported_present(client: TestClient) -> None:
+    sid = "availability-proof"
+    client.post("/api/v1/start", json={"session_id": sid})
+    turn_id, contract, chunks = begin_ready_turn(
+        client,
+        sid,
+        "Рэй, ответьте мне.",
+        active_character_ids=["akira", "jun", "emma", "irey", "ray"],
+        scene_character_ids=["akira", "jun", "emma", "irey", "ray"],
+        present_character_ids=["akira", "jun", "emma", "irey", "ray"],
+        addressed_character_ids=["ray"],
+    )
+    assert contract["character_roles"]["ray"] == "referenced"
+    diagnostic = next(item for item in contract["builder_diagnostics"] if item["fallback_blocked"] == "npc_teleport_or_unavailable_presence")
+    assert diagnostic["characters"][0]["character_id"] == "ray"
+    world_chunk = next(chunk for chunk in chunks if chunk["chunk_type"] == "location_inventory_calendar_render")
+    world = world_chunk["content"]["calendar_and_npc_autonomy"]
+    assert world["current_day_file"] == "calendar/days/1206-08-31.yaml"
+    assert world["npc_autonomy"]["ray"]["location_zone"] == "east_sector"
+
+    rejected = client.post(
+        f"/api/v1/sessions/{sid}/apply-turn-result",
+        json={
+            "turn_id": turn_id,
+            "visible_scene_text": "Рэй внезапно оказался в комнате.",
+            "current_state_patch": {
+                "present_character_ids": ["akira", "jun", "emma", "irey", "ray"]
+            }
+        },
+    ).json()
+    assert rejected["status"] == "rejected"
+    assert any(error["code"] == "npc_presence_without_arrival" for error in rejected["validation_errors"])
+
+
+def test_autonomy_never_controls_akira_or_gives_offscreen_scene_knowledge(client: TestClient) -> None:
+    sid = "autonomy-scope-proof"
+    client.post("/api/v1/start", json={"session_id": sid})
+    memory_before = base.read_json("state/character_memory/raiden.json", sid, {})
+    turn_id, _contract, _chunks = begin_ready_turn(client, sid, "Я остаюсь в комнате.")
+    blocked = client.post(
+        f"/api/v1/sessions/{sid}/apply-turn-result",
+        json={
+            "turn_id": turn_id,
+            "visible_scene_text": "Акира осталась у двери.",
+            "npc_autonomy_updates": [{
+                "character_id": "akira",
+                "action": "set_activity",
+                "activity": "obey_ray",
+                "category": "duty",
+                "evidence": "Так удобнее сцене."
+            }]
+        },
+    ).json()
+    assert blocked["status"] == "rejected"
+    assert blocked["validation_errors"][0]["code"] == "player_character_autonomy_blocked"
+
+    applied = client.post(
+        f"/api/v1/sessions/{sid}/apply-turn-result",
+        json={
+            "turn_id": turn_id,
+            "visible_scene_text": "Акира осталась у двери. В Восточном секторе Рэй продолжал ночную работу, ничего об этой паузе не зная.",
+            "npc_autonomy_updates": [{
+                "character_id": "ray",
+                "action": "set_activity",
+                "activity": "continue_command_duty",
+                "category": "duty",
+                "availability": "busy",
+                "evidence": "Рэй остаётся на своей командной работе вне сцены."
+            }]
+        },
+    ).json()
+    assert applied["status"] == "applied"
+    assert base.read_json("state/character_memory/raiden.json", sid, {}) == memory_before
+
+
+def test_until_16_accountability_allows_rest_but_flags_only_all_day_drift(client: TestClient) -> None:
+    sid = "accountability-proof"
+    client.post("/api/v1/start", json={"session_id": sid})
+    calendar_state = base.read_json("state/calendar_runtime.json", sid, {})
+    calendar_state.update({
+        "current_datetime": "1206-09-01T08:00",
+        "current_date": "1206-09-01",
+        "current_time": "08:00",
+        "current_day_phase": "утро",
+        "time_of_day": "утро",
+        "current_day_file": "calendar/days/1206-09-01.yaml",
+        "pending_events": [],
+    })
+    current = base.read_json("state/current_state.json", sid, {})
+    current.update({
+        "current_datetime": "1206-09-01T08:00",
+        "current_date": "1206-09-01",
+        "date": "1206-09-01",
+        "current_time": "08:00",
+        "current_day_phase": "утро",
+        "time_of_day": "утро",
+        "active_character_ids": ["akira"],
+        "scene_character_ids": ["akira"],
+        "present_character_ids": ["akira"],
+    })
+    base.write_json("state/calendar_runtime.json", calendar_state, sid)
+    base.write_json("state/current_state.json", current, sid)
+
+    turn_id, _contract, _chunks = begin_ready_turn(
+        client,
+        sid,
+        "Жду до четырёх часов дня, пока база живёт своими делами.",
+        time_intent={"mode": "wait", "explicit": True, "requested_elapsed_minutes": 485},
+    )
+    applied = client.post(
+        f"/api/v1/sessions/{sid}/apply-turn-result",
+        json={
+            "turn_id": turn_id,
+            "visible_scene_text": "К четырём дня движение на базе сменило ритм.",
+            "time_advance": {
+                "elapsed_minutes": 485,
+                "mode": "wait",
+                "reason": "явное ожидание до времени после 16:00",
+                "evidence": "Игрок прямо ждёт, пока проходит рабочий отрезок дня."
+            },
+            "npc_autonomy_updates": [
+                {
+                    "character_id": "alex",
+                    "action": "record_activity",
+                    "activity": "rest_and_personal_time",
+                    "category": "rest",
+                    "duration_minutes": 480,
+                    "evidence": "Алекс весь доступный отрезок провела только в отдыхе без рабочего блока."
+                },
+                {
+                    "character_id": "miki",
+                    "action": "record_activity",
+                    "activity": "squad_training",
+                    "category": "training",
+                    "duration_minutes": 60,
+                    "evidence": "Мики провела содержательную часовую тренировку, а остальное время распорядилась свободно."
+                }
+            ]
+        },
+    ).json()
+    assert applied["status"] == "applied"
+    runtime = base.read_json("state/calendar_runtime.json", sid, {})
+    observations = runtime["staff_observations"]
+    assert any(item["character_id"] == "alex" for item in observations)
+    assert not any(item["character_id"] == "miki" for item in observations)
+    alex_observation = next(item for item in observations if item["character_id"] == "alex")
+    assert alex_observation["forced_action"] is False
+    assert alex_observation["character_knowledge_created"] is False
+    assert any(item["character_id"] == "alex" and item["category"] == "rest" for item in runtime["activity_ledger"])
+
+
+def test_twelve_timed_turns_keep_clock_revision_and_chunks_bounded(client: TestClient) -> None:
+    sid = "timed-long-run-proof"
+    client.post("/api/v1/start", json={"session_id": sid})
+    for number in range(1, 13):
+        turn_id, _contract, chunks = begin_ready_turn(client, sid, f"Жду пять минут. Шаг {number}.")
+        assert max(len(json.dumps(chunk, ensure_ascii=False)) for chunk in chunks) < 25_000
+        applied = client.post(
+            f"/api/v1/sessions/{sid}/apply-turn-result",
+            json={
+                "turn_id": turn_id,
+                "visible_scene_text": f"Прошло ещё пять минут. Шаг {number}.",
+                "time_advance": {
+                    "elapsed_minutes": 5,
+                    "mode": "wait",
+                    "reason": "короткое явное ожидание",
+                    "evidence": "Игрок ждёт пять минут."
+                }
+            },
+        ).json()
+        assert applied["status"] == "applied"
+        assert applied["state_revision"] == number
+        if number in {4, 8, 12}:
+            replay = client.post(
+                f"/api/v1/sessions/{sid}/apply-turn-result",
+                json={
+                    "turn_id": turn_id,
+                    "visible_scene_text": f"Прошло ещё пять минут. Шаг {number}.",
+                    "time_advance": {
+                        "elapsed_minutes": 5,
+                        "mode": "wait",
+                        "reason": "короткое явное ожидание",
+                        "evidence": "Игрок ждёт пять минут."
+                    }
+                },
+            ).json()
+            assert replay["idempotent_replay"] is True
+
+    runtime = base.read_json("state/calendar_runtime.json", sid, {})
+    assert runtime["current_datetime"] == "1206-09-01T00:40"
+    assert runtime["elapsed_world_minutes"] == 60
+    assert runtime["time_revision"] == 12
+    assert base.read_turn_runtime(sid)["state_revision"] == 12

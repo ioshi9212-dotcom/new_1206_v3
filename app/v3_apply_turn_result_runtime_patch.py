@@ -8,7 +8,8 @@ from __future__ import annotations
 
 import hashlib
 import json
-from datetime import datetime
+import re
+from datetime import datetime, timedelta
 from typing import Any
 
 from fastapi import Body
@@ -27,6 +28,7 @@ CALENDAR_RUNTIME_FILE = "state/calendar_runtime.json"
 PHYSICAL_CONTINUITY_FILE = "state/physical_continuity_state.json"
 STORY_LINES_FILE = "state/story_lines.json"
 MAINTENANCE_RULES_FILE = "state/maintenance_rules_1206.json"
+SCHEDULE_AVAILABILITY_FILE = "state/context_loading/schedule_availability_rules_1206.json"
 
 ID_ALIASES = {
     "Акира": "akira", "акира": "akira", "akira": "akira",
@@ -61,6 +63,31 @@ FORBIDDEN_CHARACTER_STATE_KEYS = {
     "personality", "character", "character_card", "voice", "appearance", "static_card",
     "характер", "голос", "внешность", "личность",
 }
+FORBIDDEN_DIRECT_CLOCK_KEYS = {
+    "current_datetime", "current_date", "date", "current_time", "current_day_phase",
+    "time_of_day", "elapsed_world_minutes", "time_revision",
+}
+TIME_ADVANCE_MODES = {"scene", "travel", "meal", "training", "rest", "sleep", "wait", "timeskip"}
+NPC_AUTONOMY_ACTIONS = {
+    "set_activity", "record_activity", "start_travel", "arrive", "delay",
+    "set_availability", "complete_activity",
+}
+NPC_AVAILABILITY = {
+    "present", "nearby", "available", "busy", "offscreen", "in_transit",
+    "resting", "sleeping", "medical", "on_raid", "off_base", "unavailable",
+    "unavailable_until_1206-09-21",
+}
+ACTIVITY_CATEGORIES = {
+    "raid", "duty", "scene_duty", "scene_goal", "training", "lesson", "maintenance",
+    "medical", "medical_assignment", "recovery_plan", "admin", "travel", "meal",
+    "rest", "sleep", "social", "personal_time", "private_time", "off_base", "other",
+}
+LARGE_SKIP_HINTS = (
+    "жду", "подожду", "подожд", "сплю", "ложусь", "отдыха", "пропуска", "проматыва",
+    "следующ", "до утра", "до вечера", "до завтра", "через час", "через два", "несколько часов",
+    "еду", "поед", "отправля", "добира", "путь", "дорог", "перенес", "таймскип",
+    "wait", "sleep", "rest", "timeskip", "travel", "next morning", "next day",
+)
 
 
 def _remove_route(path: str, method: str | None = None) -> None:
@@ -307,6 +334,745 @@ def _plan_json_patch_file(sid: str, path: str, section: Any, writes: dict[str, A
         return False
     writes[path] = new
     return True
+
+
+def _parse_world_datetime(value: Any) -> datetime | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    try:
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is not None:
+        parsed = parsed.replace(tzinfo=None)
+    return parsed.replace(second=0, microsecond=0)
+
+
+def _world_clock(calendar_state: dict[str, Any], current: dict[str, Any]) -> datetime:
+    direct = _parse_world_datetime(calendar_state.get("current_datetime") or current.get("current_datetime"))
+    if direct:
+        return direct
+    date_text = str(calendar_state.get("current_date") or current.get("current_date") or "1206-08-31")
+    time_text = str(calendar_state.get("current_time") or current.get("current_time") or "23:40")
+    return _parse_world_datetime(f"{date_text}T{time_text}") or datetime(1206, 8, 31, 23, 40)
+
+
+def _iso_minute(value: datetime) -> str:
+    return value.strftime("%Y-%m-%dT%H:%M")
+
+
+def _phase_for(value: datetime) -> str:
+    hour = value.hour
+    if hour < 5:
+        return "глубокая ночь"
+    if hour < 8:
+        return "раннее утро"
+    if hour < 12:
+        return "утро"
+    if hour < 16:
+        return "день"
+    if hour < 19:
+        return "вечер"
+    if hour < 23:
+        return "поздний вечер"
+    return "поздняя ночь"
+
+
+def _calendar_day_file(value: datetime) -> str:
+    target = value.strftime("%Y-%m-%d")
+    days_dir = base.REPO_ROOT / "calendar" / "days"
+    exact = days_dir / f"{target}.yaml"
+    if exact.is_file():
+        return f"calendar/days/{exact.name}"
+    for path in sorted(days_dir.glob("*.yaml")):
+        match = re.fullmatch(r"(\d{4}-\d{2}-\d{2})_(\d{2})-(\d{2})", path.stem)
+        if not match:
+            continue
+        start = match.group(1)
+        end = f"{start[:8]}{match.group(2)}"
+        if start <= target <= end:
+            return f"calendar/days/{path.name}"
+    return f"calendar/days/{target}.yaml"
+
+
+def _location_zone(value: Any) -> str:
+    location = str(value or "").strip().lower()
+    for prefix in ("jun_house", "east_sector", "east_coast", "off_base"):
+        if location.startswith(prefix):
+            return prefix
+    if location.startswith("in_transit:"):
+        return "in_transit"
+    return location.split("_", 1)[0] if location else "unknown"
+
+
+def _contains_direct_clock_key(value: Any) -> str:
+    if not isinstance(value, dict):
+        return ""
+    for key in value:
+        if _normalized_key(key) in FORBIDDEN_DIRECT_CLOCK_KEYS:
+            return str(key)
+    return ""
+
+
+def _player_allows_large_skip(pending: dict[str, Any], mode: str) -> bool:
+    intent = pending.get("time_intent") if isinstance(pending.get("time_intent"), dict) else {}
+    if bool(intent.get("explicit")):
+        return True
+    text = str(pending.get("player_input") or "").lower().replace("ё", "е")
+    if mode in {"sleep", "wait", "timeskip", "travel", "rest"} and any(hint in text for hint in LARGE_SKIP_HINTS):
+        return True
+    return any(hint in text for hint in LARGE_SKIP_HINTS)
+
+
+def _event_list(value: Any) -> list[dict[str, Any]]:
+    result: list[dict[str, Any]] = []
+    for item in _as_list(value):
+        if isinstance(item, str) and item.strip():
+            result.append({"event_id": item.strip(), "status": "open"})
+        elif isinstance(item, dict) and item.get("event_id"):
+            result.append(dict(item))
+    return result
+
+
+def _normalize_update_items(section: Any, owner_key: str) -> list[dict[str, Any]]:
+    result: list[dict[str, Any]] = []
+    for raw in _section_items(section):
+        item = dict(raw)
+        patch = item.pop("patch", None)
+        if isinstance(patch, dict):
+            item = {**patch, **item}
+        if owner_key not in item and item.get("id"):
+            item[owner_key] = item.get("id")
+        result.append(item)
+    return result
+
+
+def _activity_entry(
+    turn_id: str,
+    character_id: str,
+    category: str,
+    activity: str,
+    duration_minutes: int,
+    ended_at: datetime,
+    evidence: str,
+) -> dict[str, Any]:
+    started_at = ended_at - timedelta(minutes=duration_minutes)
+    return {
+        "entry_id": _stable_event_id(turn_id, character_id, "activity", f"{activity}:{duration_minutes}:{_iso_minute(ended_at)}", category),
+        "turn_id": turn_id,
+        "character_id": character_id,
+        "date": ended_at.strftime("%Y-%m-%d"),
+        "activity": activity,
+        "category": category,
+        "duration_minutes": duration_minutes,
+        "started_at": _iso_minute(started_at),
+        "ended_at": _iso_minute(ended_at),
+        "evidence": _bounded_text(evidence, 500),
+    }
+
+
+def _crossed_accountability_days(old_clock: datetime, new_clock: datetime) -> list[str]:
+    result: list[str] = []
+    cursor = old_clock.replace(hour=0, minute=0)
+    end_day = new_clock.replace(hour=0, minute=0)
+    while cursor <= end_day:
+        boundary = cursor.replace(hour=16, minute=0)
+        if old_clock < boundary <= new_clock:
+            result.append(cursor.strftime("%Y-%m-%d"))
+        cursor += timedelta(days=1)
+    return result
+
+
+def _evaluate_raider_accountability(
+    sid: str,
+    calendar_state: dict[str, Any],
+    old_clock: datetime,
+    new_clock: datetime,
+) -> list[dict[str, Any]]:
+    rules = _read_json(SCHEDULE_AVAILABILITY_FILE, sid, {})
+    accountability = rules.get("raider_accountability") if isinstance(rules, dict) and isinstance(rules.get("raider_accountability"), dict) else {}
+    raider_ids = [_cid(value) for value in accountability.get("raider_character_ids", ["alex", "miki", "raiden", "haru"])]
+    productive = set(accountability.get("substantive_categories", [
+        "raid", "duty", "training", "lesson", "maintenance", "medical_assignment", "recovery_plan", "admin",
+    ]))
+    exempt_availability = set(accountability.get("exempt_availability", ["unavailable", "unavailable_until_1206-09-21"]))
+    ledger = calendar_state.get("activity_ledger") if isinstance(calendar_state.get("activity_ledger"), list) else []
+    autonomy = calendar_state.get("npc_autonomy") if isinstance(calendar_state.get("npc_autonomy"), dict) else {}
+    observations = calendar_state.get("staff_observations") if isinstance(calendar_state.get("staff_observations"), list) else []
+    existing = {
+        (str(item.get("date") or ""), _cid(item.get("character_id")))
+        for item in observations if isinstance(item, dict)
+    }
+    added: list[dict[str, Any]] = []
+    for day in _crossed_accountability_days(old_clock, new_clock):
+        for cid in raider_ids:
+            state = autonomy.get(cid) if isinstance(autonomy.get(cid), dict) else {}
+            if str(state.get("availability") or "") in exempt_availability:
+                continue
+            day_entries = [
+                entry for entry in ledger
+                if isinstance(entry, dict) and entry.get("date") == day and _cid(entry.get("character_id")) == cid
+            ]
+            has_substantive = (
+                any(str(entry.get("category") or "") in productive for entry in day_entries)
+                or str(state.get("activity_category") or "") in productive
+                or str(state.get("availability") or "") == "on_raid"
+            )
+            if has_substantive or (day, cid) in existing:
+                continue
+            categories = sorted({str(entry.get("category") or "unknown") for entry in day_entries})
+            observation = {
+                "observation_id": f"accountability:{day}:{cid}",
+                "date": day,
+                "character_id": cid,
+                "kind": "day_until_16_unaccounted",
+                "status": "pending_witness_or_review",
+                "observed_categories": categories,
+                "reason": "До 16:00 не зафиксировано ни одного содержательного блока рейда, службы, тренировки, занятия, работы или обоснованного восстановления.",
+                "rule": "Отдых, еда, разговор и сон разрешены; вывод появляется только когда ими/пустотой занят весь рабочий отрезок.",
+                "possible_consequence": "Сотрудники могут сделать вывод и передать наблюдение Рэю, только если это будет замечено или проверено в мире.",
+                "forced_action": False,
+                "character_knowledge_created": False,
+            }
+            observations.append(observation)
+            added.append(observation)
+            existing.add((day, cid))
+    calendar_state["staff_observations"] = observations[-120:]
+    return added
+
+
+def _plan_world_time_and_autonomy(
+    sid: str,
+    payload: dict[str, Any],
+    pending: dict[str, Any],
+    context_snapshot: dict[str, Any],
+    current: dict[str, Any],
+    *,
+    turn_id: str,
+    state_revision: int,
+) -> tuple[dict[str, Any], dict[str, Any], list[dict[str, Any]]]:
+    errors: list[dict[str, Any]] = []
+    legacy_calendar_patch = _find(payload, "calendar_runtime_patch", "calendar_runtime_changes", "calendar_runtime", "calendar_changes")
+    if legacy_calendar_patch not in (None, {}, []):
+        errors.append({
+            "code": "direct_calendar_patch_blocked",
+            "message": "Calendar runtime is engine-owned. Use time_advance, event_updates and npc_autonomy_updates.",
+        })
+
+    calendar_state = _read_json(CALENDAR_RUNTIME_FILE, sid, {})
+    if not isinstance(calendar_state, dict) or not calendar_state:
+        calendar_state = base.start_calendar_runtime()
+    else:
+        calendar_state = json.loads(json.dumps(calendar_state, ensure_ascii=False))
+    old_clock = _world_clock(calendar_state, current)
+
+    contract = context_snapshot.get("contract") if isinstance(context_snapshot.get("contract"), dict) else {}
+    frozen_time = contract.get("time_context") if isinstance(contract.get("time_context"), dict) else {}
+    frozen_clock = _parse_world_datetime(frozen_time.get("current_datetime"))
+    if frozen_clock and frozen_clock != old_clock:
+        errors.append({
+            "code": "time_snapshot_stale",
+            "message": "The frozen turn clock no longer matches committed calendar state.",
+            "snapshot_datetime": _iso_minute(frozen_clock),
+            "committed_datetime": _iso_minute(old_clock),
+        })
+
+    raw_time = _find(payload, "time_advance", "world_time_advance")
+    if raw_time is None:
+        raw_time = {}
+    if not isinstance(raw_time, dict):
+        errors.append({"code": "invalid_time_advance", "message": "time_advance must be an object."})
+        raw_time = {}
+    raw_elapsed = raw_time.get("elapsed_minutes", 0)
+    if isinstance(raw_elapsed, bool) or not isinstance(raw_elapsed, int):
+        errors.append({"code": "invalid_elapsed_minutes", "message": "elapsed_minutes must be a non-negative integer."})
+        elapsed = 0
+    else:
+        elapsed = raw_elapsed
+    if elapsed < 0:
+        errors.append({"code": "time_cannot_move_backward", "message": "World time cannot move backward."})
+        elapsed = 0
+    if elapsed > 43_200:
+        errors.append({"code": "timeskip_too_large", "message": "One applied turn may not skip more than 30 days."})
+        elapsed = 0
+    mode = _normalized_key(raw_time.get("mode") or "scene")
+    if mode not in TIME_ADVANCE_MODES:
+        errors.append({"code": "invalid_time_advance_mode", "message": f"Unsupported time advance mode: {mode}."})
+    reason = _bounded_text(raw_time.get("reason"), 500)
+    evidence = _bounded_text(raw_time.get("evidence"), 700)
+    if elapsed and (not reason or not evidence):
+        errors.append({
+            "code": "time_advance_without_evidence",
+            "message": "Any elapsed world time needs both reason and scene evidence.",
+        })
+    new_clock = old_clock + timedelta(minutes=max(0, elapsed))
+    target = raw_time.get("target_datetime")
+    if target:
+        parsed_target = _parse_world_datetime(target)
+        if not parsed_target:
+            errors.append({"code": "invalid_target_datetime", "message": "target_datetime must be YYYY-MM-DDTHH:MM."})
+        elif parsed_target != new_clock:
+            errors.append({
+                "code": "time_target_mismatch",
+                "message": "target_datetime must equal committed clock plus elapsed_minutes.",
+                "expected": _iso_minute(new_clock),
+            })
+
+    raw_event_updates = _normalize_update_items(_find(payload, "event_updates", "calendar_event_updates"), "event_id")
+    resolving_ids = {
+        str(item.get("event_id") or "")
+        for item in raw_event_updates
+        if _normalized_key(item.get("action")) in {"resolve", "cancel", "acknowledge"}
+    }
+    events = _event_list(calendar_state.get("pending_events"))
+    if elapsed > 120 or old_clock.date() != new_clock.date():
+        if not _player_allows_large_skip(pending, mode):
+            errors.append({
+                "code": "large_timeskip_without_player_intent",
+                "message": "Hours/days may pass only when the protected player input explicitly waits, sleeps, rests, travels or requests a skip.",
+            })
+        blocking = [
+            str(event.get("event_id")) for event in events
+            if event.get("blocks_large_timeskip") and str(event.get("status") or "") in {"open", "triggered"}
+            and str(event.get("event_id")) not in resolving_ids
+        ]
+        if blocking:
+            errors.append({
+                "code": "timeskip_crosses_unresolved_response",
+                "message": "Resolve the immediate response window in the played scene before a large timeskip.",
+                "event_ids": blocking,
+            })
+
+    event_by_id = {str(item.get("event_id")): item for item in events}
+    normalized_npc_updates = _normalize_update_items(_find(payload, "npc_autonomy_updates", "character_autonomy_updates"), "character_id")
+    normalized_actions = {
+        (_cid(item.get("character_id")), _normalized_key(item.get("action")))
+        for item in normalized_npc_updates
+    }
+    for update in raw_event_updates:
+        event_id = str(update.get("event_id") or "").strip()
+        event = event_by_id.get(event_id)
+        action = _normalized_key(update.get("action") or "")
+        if action == "acknowledge":
+            action = "resolve"
+        if not event:
+            errors.append({"code": "unknown_calendar_event", "event_id": event_id, "message": "Event is not in the frozen current-day runtime."})
+            continue
+        event_evidence = _bounded_text(update.get("evidence"), 700)
+        if action not in {"trigger", "resolve", "cancel", "escalate"}:
+            errors.append({"code": "invalid_event_action", "event_id": event_id, "message": f"Unsupported event action: {action}."})
+            continue
+        if not event_evidence:
+            errors.append({"code": "event_update_without_evidence", "event_id": event_id, "message": "Event transition needs played scene evidence."})
+            continue
+        if action == "trigger":
+            if str(event.get("status") or "") not in {"dormant", "scheduled", "open"}:
+                errors.append({"code": "invalid_event_transition", "event_id": event_id, "message": "Only dormant/scheduled/open events can be triggered."})
+                continue
+            event["status"] = "triggered"
+            event["triggered_at"] = _iso_minute(new_clock)
+            event["trigger_evidence"] = event_evidence
+            min_delay = int(event.get("min_delay_minutes") or 0)
+            if min_delay:
+                event["earliest_at"] = _iso_minute(new_clock + timedelta(minutes=min_delay))
+            required_action = _normalized_key(event.get("required_autonomy_action"))
+            character_id = _cid(event.get("character_id"))
+            if required_action and (character_id, required_action) not in normalized_actions:
+                errors.append({
+                    "code": "event_requires_autonomy_action",
+                    "event_id": event_id,
+                    "character_id": character_id,
+                    "required_action": required_action,
+                    "message": "This trigger must commit the NPC's corresponding offscreen decision in the same transaction.",
+                })
+        elif action == "resolve":
+            event["status"] = "resolved"
+            event["resolved_at"] = _iso_minute(new_clock)
+            event["resolution_evidence"] = event_evidence
+        elif action == "cancel":
+            event["status"] = "cancelled"
+            event["cancelled_at"] = _iso_minute(new_clock)
+            event["cancellation_evidence"] = event_evidence
+        else:
+            event["status"] = "escalated"
+            event["escalated_at"] = _iso_minute(new_clock)
+            event["escalation_evidence"] = event_evidence
+            event["escalation_level"] = int(event.get("escalation_level") or 0) + 1
+
+    autonomy = calendar_state.get("npc_autonomy") if isinstance(calendar_state.get("npc_autonomy"), dict) else {}
+    autonomy = json.loads(json.dumps(autonomy, ensure_ascii=False))
+    ledger = calendar_state.get("activity_ledger") if isinstance(calendar_state.get("activity_ledger"), list) else []
+    ledger = list(ledger)
+    autonomy_audit: list[dict[str, Any]] = []
+    for update in normalized_npc_updates:
+        cid = _cid(update.get("character_id"))
+        action = _normalized_key(update.get("action"))
+        update_evidence = _bounded_text(update.get("evidence") or update.get("reason"), 700)
+        if cid == "akira":
+            errors.append({"code": "player_character_autonomy_blocked", "character_id": cid, "message": "NPC autonomy updates may never choose an action for Akira."})
+            continue
+        if not cid or not (base.REPO_ROOT / "characters" / cid / "main.yaml").is_file():
+            errors.append({"code": "unknown_autonomy_character", "character_id": cid, "message": "Autonomy target must be a full character in characters/<id>."})
+            continue
+        if action not in NPC_AUTONOMY_ACTIONS:
+            errors.append({"code": "invalid_autonomy_action", "character_id": cid, "message": f"Unsupported autonomy action: {action}."})
+            continue
+        if not update_evidence:
+            errors.append({"code": "autonomy_update_without_evidence", "character_id": cid, "message": "NPC autonomy change needs an in-world reason/evidence."})
+            continue
+        state = dict(autonomy.get(cid)) if isinstance(autonomy.get(cid), dict) else {
+            "control": "autonomous_npc", "location_id": "unknown", "availability": "offscreen"
+        }
+        old_location = str(state.get("location_id") or "unknown")
+        audit_item = {"character_id": cid, "action": action, "evidence": update_evidence}
+
+        if action == "record_activity":
+            activity = _bounded_text(update.get("activity"), 180)
+            category = _normalized_key(update.get("category") or "other")
+            duration = update.get("duration_minutes")
+            if not activity or category not in ACTIVITY_CATEGORIES:
+                errors.append({"code": "invalid_activity_block", "character_id": cid, "message": "record_activity needs activity and an allowed category."})
+                continue
+            if isinstance(duration, bool) or not isinstance(duration, int) or duration <= 0 or duration > elapsed:
+                errors.append({"code": "invalid_activity_duration", "character_id": cid, "message": "Activity duration must be positive and cannot exceed this turn's elapsed_minutes."})
+                continue
+            entry = _activity_entry(turn_id, cid, category, activity, duration, new_clock, update_evidence)
+            if not any(isinstance(item, dict) and item.get("entry_id") == entry["entry_id"] for item in ledger):
+                ledger.append(entry)
+            state.update({
+                "activity": activity,
+                "activity_category": category,
+                "last_activity_completed_at": _iso_minute(new_clock),
+                "last_activity_evidence": update_evidence,
+            })
+            audit_item["duration_minutes"] = duration
+        elif action == "set_activity":
+            activity = _bounded_text(update.get("activity"), 180)
+            category = _normalized_key(update.get("category") or "other")
+            requested_location = str(update.get("location_id") or old_location)
+            if not activity or category not in ACTIVITY_CATEGORIES:
+                errors.append({"code": "invalid_activity_state", "character_id": cid, "message": "set_activity needs activity and an allowed category."})
+                continue
+            if requested_location != old_location:
+                errors.append({"code": "activity_cannot_teleport", "character_id": cid, "message": "set_activity cannot change location; use start_travel and arrive."})
+                continue
+            availability = str(update.get("availability") or state.get("availability") or "offscreen")
+            if availability not in NPC_AVAILABILITY:
+                errors.append({"code": "invalid_npc_availability", "character_id": cid, "message": f"Unsupported availability: {availability}."})
+                continue
+            state.update({
+                "activity": activity,
+                "activity_category": category,
+                "availability": availability,
+                "since": _iso_minute(new_clock),
+                "decision_reason": update_evidence,
+            })
+        elif action == "start_travel":
+            from_location = str(update.get("from_location_id") or old_location)
+            destination = str(update.get("destination_location_id") or "").strip()
+            travel_minutes = update.get("travel_minutes")
+            before_end = update.get("started_minutes_before_turn_end", 0)
+            if from_location != old_location or not destination or destination == from_location:
+                errors.append({"code": "invalid_travel_route", "character_id": cid, "message": "Travel must start at the committed NPC location and have a different destination."})
+                continue
+            if isinstance(travel_minutes, bool) or not isinstance(travel_minutes, int) or not 1 <= travel_minutes <= 1440:
+                errors.append({"code": "invalid_travel_duration", "character_id": cid, "message": "travel_minutes must be between 1 and 1440."})
+                continue
+            if isinstance(before_end, bool) or not isinstance(before_end, int) or before_end < 0 or before_end > elapsed:
+                errors.append({"code": "invalid_travel_departure_offset", "character_id": cid, "message": "started_minutes_before_turn_end must fit inside elapsed_minutes."})
+                continue
+            relevant_events = [
+                event for event in events
+                if _cid(event.get("character_id")) == cid and str(event.get("status") or "") == "triggered"
+            ]
+            route_mismatch = next((
+                event for event in relevant_events
+                if (
+                    event.get("origin_location_id") and str(event.get("origin_location_id")) != from_location
+                ) or (
+                    event.get("destination_location_id") and str(event.get("destination_location_id")) != destination
+                )
+            ), None)
+            if route_mismatch:
+                errors.append({
+                    "code": "travel_route_mismatches_event",
+                    "character_id": cid,
+                    "event_id": route_mismatch.get("event_id"),
+                    "message": "The offscreen travel route must match the triggered event's origin and destination.",
+                })
+                continue
+            relevant_delays = [int(event.get("min_delay_minutes") or 0) for event in relevant_events]
+            if relevant_delays and travel_minutes < max(relevant_delays):
+                errors.append({"code": "travel_faster_than_event_minimum", "character_id": cid, "message": "Travel duration is shorter than the event's minimum plausible delay."})
+                continue
+            departed_at = new_clock - timedelta(minutes=before_end)
+            arrival_at = departed_at + timedelta(minutes=travel_minutes)
+            state.update({
+                "from_location_id": from_location,
+                "location_id": f"in_transit:{from_location}__{destination}",
+                "destination_location_id": destination,
+                "activity": "travel",
+                "activity_category": "travel",
+                "availability": "in_transit",
+                "departed_at": _iso_minute(departed_at),
+                "earliest_arrival_at": _iso_minute(arrival_at),
+                "since": _iso_minute(departed_at),
+                "decision_reason": update_evidence,
+            })
+            audit_item["earliest_arrival_at"] = _iso_minute(arrival_at)
+        elif action == "arrive":
+            destination = str(update.get("destination_location_id") or state.get("destination_location_id") or "").strip()
+            earliest = _parse_world_datetime(state.get("earliest_arrival_at"))
+            if str(state.get("availability") or "") != "in_transit" or not earliest or not destination:
+                errors.append({"code": "arrival_without_active_travel", "character_id": cid, "message": "NPC can arrive only from an existing in-transit state with ETA."})
+                continue
+            if new_clock < earliest:
+                errors.append({
+                    "code": "arrival_before_eta",
+                    "character_id": cid,
+                    "message": "NPC cannot arrive before earliest_arrival_at.",
+                    "earliest_arrival_at": _iso_minute(earliest),
+                    "current_datetime": _iso_minute(new_clock),
+                })
+                continue
+            availability = str(update.get("availability") or "nearby")
+            arrival_category = _normalized_key(update.get("category") or "scene_goal")
+            if availability not in {"present", "nearby", "available", "busy", "offscreen"}:
+                errors.append({"code": "invalid_arrival_availability", "character_id": cid, "message": "Arrival availability must be present/nearby/available/busy/offscreen."})
+                continue
+            if arrival_category not in ACTIVITY_CATEGORIES:
+                errors.append({"code": "invalid_arrival_activity", "character_id": cid, "message": "Arrival category is not supported."})
+                continue
+            state.update({
+                "location_id": destination,
+                "activity": _bounded_text(update.get("activity") or "arrived_and_assessing", 180),
+                "activity_category": arrival_category,
+                "availability": availability,
+                "arrived_at": _iso_minute(new_clock),
+                "since": _iso_minute(new_clock),
+                "arrival_evidence": update_evidence,
+            })
+            for event in events:
+                if (
+                    _cid(event.get("character_id")) == cid
+                    and str(event.get("status") or "") == "triggered"
+                    and str(event.get("destination_location_id") or destination) == destination
+                ):
+                    event["status"] = "resolved"
+                    event["resolved_at"] = _iso_minute(new_clock)
+                    event["resolution_evidence"] = update_evidence
+            for key in ("from_location_id", "destination_location_id", "departed_at", "earliest_arrival_at", "delay_reason"):
+                state.pop(key, None)
+        elif action == "delay":
+            delay_minutes = update.get("delay_minutes")
+            earliest = _parse_world_datetime(state.get("earliest_arrival_at"))
+            if str(state.get("availability") or "") != "in_transit" or not earliest:
+                errors.append({"code": "delay_without_active_travel", "character_id": cid, "message": "Only an in-transit NPC can receive a travel delay."})
+                continue
+            if isinstance(delay_minutes, bool) or not isinstance(delay_minutes, int) or not 1 <= delay_minutes <= 720:
+                errors.append({"code": "invalid_delay_duration", "character_id": cid, "message": "delay_minutes must be between 1 and 720."})
+                continue
+            state["earliest_arrival_at"] = _iso_minute(earliest + timedelta(minutes=delay_minutes))
+            state["delay_reason"] = update_evidence
+            audit_item["earliest_arrival_at"] = state["earliest_arrival_at"]
+        elif action == "set_availability":
+            availability = str(update.get("availability") or "")
+            if availability not in NPC_AVAILABILITY or availability == "in_transit":
+                errors.append({"code": "invalid_npc_availability", "character_id": cid, "message": "Use start_travel for in_transit; otherwise provide a supported availability."})
+                continue
+            if update.get("location_id") and str(update.get("location_id")) != old_location:
+                errors.append({"code": "availability_cannot_teleport", "character_id": cid, "message": "set_availability cannot change location."})
+                continue
+            state.update({"availability": availability, "since": _iso_minute(new_clock), "availability_reason": update_evidence})
+            if update.get("busy_until"):
+                busy_until = _parse_world_datetime(update.get("busy_until"))
+                if not busy_until or busy_until < new_clock:
+                    errors.append({"code": "invalid_busy_until", "character_id": cid, "message": "busy_until must be at or after the new world clock."})
+                    continue
+                state["busy_until"] = _iso_minute(busy_until)
+        else:  # complete_activity
+            next_category = _normalized_key(update.get("next_category") or "other")
+            next_availability = str(update.get("availability") or "available")
+            if next_category not in ACTIVITY_CATEGORIES or next_availability not in NPC_AVAILABILITY or next_availability == "in_transit":
+                errors.append({
+                    "code": "invalid_completed_activity_state",
+                    "character_id": cid,
+                    "message": "complete_activity needs a supported next_category and non-transit availability.",
+                })
+                continue
+            state.update({
+                "activity": _bounded_text(update.get("next_activity") or "available_after_activity", 180),
+                "activity_category": next_category,
+                "availability": next_availability,
+                "since": _iso_minute(new_clock),
+                "completion_evidence": update_evidence,
+            })
+        state["last_updated_turn_id"] = turn_id
+        state["last_updated_at"] = _iso_minute(new_clock)
+        autonomy[cid] = state
+        autonomy_audit.append(audit_item)
+
+    world_consequences = calendar_state.get("world_consequences") if isinstance(calendar_state.get("world_consequences"), list) else []
+    world_consequences = list(world_consequences)
+    for event in events:
+        status = str(event.get("status") or "")
+        due_at = _parse_world_datetime(event.get("due_at"))
+        if status not in {"open", "triggered"} or not due_at or due_at > new_clock:
+            continue
+        event["status"] = "missed"
+        event["missed_at"] = _iso_minute(new_clock)
+        event["escalation_level"] = int(event.get("escalation_level") or 0) + 1
+        on_miss = event.get("on_miss") if isinstance(event.get("on_miss"), dict) else {}
+        consequence_text = _bounded_text(on_miss.get("world_consequence") or event.get("missed_consequence") or "The world continued without waiting for the player.", 700)
+        consequence_id = f"{event.get('event_id')}:{state_revision}:missed"
+        if not any(isinstance(item, dict) and item.get("consequence_id") == consequence_id for item in world_consequences):
+            world_consequences.append({
+                "consequence_id": consequence_id,
+                "event_id": event.get("event_id"),
+                "occurred_at": _iso_minute(new_clock),
+                "kind": "missed_event_world_pressure",
+                "summary": consequence_text,
+                "player_action_inferred": False,
+                "player_thought_inferred": False,
+                "character_knowledge_created": False,
+                "rule": on_miss.get("forbidden_player_inference") or "Never convert a missed window into an invented Akira action or motive.",
+            })
+
+    calendar_state.update({
+        "schema": "calendar_runtime_v3_time_autonomy",
+        "project": "akira-1206-v3",
+        "current_datetime": _iso_minute(new_clock),
+        "current_date": new_clock.strftime("%Y-%m-%d"),
+        "current_time": new_clock.strftime("%H:%M"),
+        "current_day_phase": _phase_for(new_clock),
+        "time_of_day": _phase_for(new_clock),
+        "current_day_file": _calendar_day_file(new_clock),
+        "elapsed_world_minutes": int(calendar_state.get("elapsed_world_minutes") or 0) + max(0, elapsed),
+        "time_revision": state_revision,
+        "pending_events": events,
+        "npc_autonomy": autonomy,
+        "activity_ledger": ledger[-240:],
+        "world_consequences": world_consequences[-120:],
+        "last_time_advance": {
+            "turn_id": turn_id,
+            "elapsed_minutes": max(0, elapsed),
+            "mode": mode,
+            "reason": reason,
+            "evidence": evidence,
+            "from": _iso_minute(old_clock),
+            "to": _iso_minute(new_clock),
+        },
+    })
+    accountability_added = _evaluate_raider_accountability(sid, calendar_state, old_clock, new_clock)
+
+    current.update({
+        "current_datetime": _iso_minute(new_clock),
+        "current_date": new_clock.strftime("%Y-%m-%d"),
+        "date": new_clock.strftime("%Y-%m-%d"),
+        "current_time": new_clock.strftime("%H:%M"),
+        "current_day_phase": _phase_for(new_clock),
+        "time_of_day": _phase_for(new_clock),
+        "elapsed_world_minutes": int(calendar_state.get("elapsed_world_minutes") or 0),
+    })
+    current_present = {_cid(value) for value in (current.get("present_character_ids") or [])}
+    if _cid(current.get("pov_character_id")) == "akira" or "akira" in current_present:
+        akira_state = autonomy.get("akira") if isinstance(autonomy.get("akira"), dict) else {}
+        akira_state.update({
+            "control": "player",
+            "location_id": current.get("current_location_id") or current.get("location_id") or akira_state.get("location_id"),
+            "activity": "player_controlled_scene",
+            "activity_category": "player_controlled",
+            "availability": "present",
+            "since": _iso_minute(new_clock),
+        })
+        autonomy["akira"] = akira_state
+    calendar_state["npc_autonomy"] = autonomy
+
+    audit = {
+        "from": _iso_minute(old_clock),
+        "to": _iso_minute(new_clock),
+        "elapsed_minutes": max(0, elapsed),
+        "mode": mode,
+        "current_day_file": calendar_state.get("current_day_file"),
+        "event_updates": len(raw_event_updates),
+        "autonomy_updates": autonomy_audit,
+        "staff_observations_added": accountability_added,
+        "missed_event_consequences": [
+            item for item in world_consequences
+            if isinstance(item, dict) and item.get("occurred_at") == _iso_minute(new_clock)
+        ],
+    }
+    return calendar_state, audit, errors
+
+
+def _validate_scene_presence_transition(
+    sid: str,
+    committed_current: dict[str, Any],
+    current: dict[str, Any],
+    calendar_state: dict[str, Any],
+    pending: dict[str, Any],
+    elapsed_minutes: int,
+) -> list[dict[str, Any]]:
+    errors: list[dict[str, Any]] = []
+    old_location = committed_current.get("current_location_id") or committed_current.get("location_id")
+    new_location = current.get("current_location_id") or current.get("location_id")
+    old_zone, new_zone = _location_zone(old_location), _location_zone(new_location)
+    if old_zone not in {"unknown", new_zone} and new_zone != "unknown":
+        text = str(pending.get("player_input") or "").lower().replace("ё", "е")
+        movement_hints = ("иду", "еду", "бегу", "выхожу", "ухожу", "отправля", "добира", "перемещ", "путь", "дорог", "поех")
+        if elapsed_minutes <= 0 or not any(hint in text for hint in movement_hints):
+            errors.append({
+                "code": "scene_location_change_without_travel",
+                "message": "Cross-zone scene movement needs positive elapsed time and a movement action in the protected player input.",
+                "from_location_id": old_location,
+                "to_location_id": new_location,
+            })
+
+    old_present = {_cid(value) for value in (committed_current.get("present_character_ids") or [])}
+    new_present = {_cid(value) for value in (current.get("present_character_ids") or [])}
+    autonomy = calendar_state.get("npc_autonomy") if isinstance(calendar_state.get("npc_autonomy"), dict) else {}
+    pov = _cid(current.get("pov_character_id"))
+    if elapsed_minutes > 120:
+        frozen_npcs = []
+        for cid in sorted(old_present):
+            if cid in {"", "akira", pov}:
+                continue
+            state = autonomy.get(cid) if isinstance(autonomy.get(cid), dict) else {}
+            if state.get("last_updated_turn_id") != pending.get("turn_id"):
+                frozen_npcs.append(cid)
+        if frozen_npcs:
+            errors.append({
+                "code": "large_timeskip_freezes_present_npcs",
+                "character_ids": frozen_npcs,
+                "message": "A large skip must resolve every currently present NPC into an evidence-backed activity/availability/travel state; they cannot wait frozen around the player.",
+            })
+    for cid in sorted(new_present - old_present):
+        if cid in {"", "akira", pov}:
+            continue
+        state = autonomy.get(cid) if isinstance(autonomy.get(cid), dict) else {}
+        availability = str(state.get("availability") or "unknown")
+        npc_zone = _location_zone(state.get("location_id"))
+        if availability not in {"present", "nearby", "available"} or npc_zone not in {"unknown", new_zone}:
+            errors.append({
+                "code": "npc_presence_without_arrival",
+                "character_id": cid,
+                "message": "A newly present NPC needs a committed arrival/availability state in the same location zone.",
+                "npc_location_id": state.get("location_id"),
+                "npc_availability": availability,
+                "scene_location_id": new_location,
+            })
+    for cid in sorted(new_present & old_present):
+        if cid in {"", "akira", pov} or old_zone == new_zone:
+            continue
+        state = autonomy.get(cid) if isinstance(autonomy.get(cid), dict) else {}
+        if _location_zone(state.get("location_id")) != new_zone:
+            errors.append({
+                "code": "present_npc_did_not_travel_with_scene",
+                "character_id": cid,
+                "message": "An NPC kept in a cross-zone scene must complete their own travel update; scene location cannot carry them automatically.",
+            })
+    return errors
 
 
 def _normalized_key(value: Any) -> str:
@@ -994,22 +1760,67 @@ def apply_turn_result_v3(session_id: str, body: dict[str, Any] | None = Body(def
 
         # Commit the protected player input and its overrides together with the
         # generated result; processTurn never mutates canonical current_state.
+        committed_current = _read_json(CURRENT_STATE_FILE, sid, {})
+        if not isinstance(committed_current, dict):
+            committed_current = {}
         current = base.effective_current_state(sid)
         current_section = _find(payload, "current_state_patch", "current_state_changes", "current_state", "state_changes")
+        direct_clock_key = _contains_direct_clock_key(current_section)
+        if direct_clock_key:
+            return _rejected(
+                sid,
+                "Clock fields are engine-owned. Use time_advance; direct date/time patches are blocked.",
+                turn_id=turn_id,
+                expected_turn_id=expected_turn_id,
+                next_action="applyTurnResult",
+                validation_errors=[{
+                    "code": "direct_clock_patch_blocked",
+                    "field": direct_clock_key,
+                    "message": "Use elapsed_minutes plus mode/reason/evidence instead of setting a clock field.",
+                }],
+            )
         if isinstance(current_section, dict) and current_section:
             current = _deep_merge(current, current_section)
+
+        calendar_state, time_autonomy_audit, time_autonomy_errors = _plan_world_time_and_autonomy(
+            sid,
+            payload,
+            pending,
+            context_snapshot,
+            current,
+            turn_id=turn_id,
+            state_revision=new_revision,
+        )
+        time_autonomy_errors.extend(_validate_scene_presence_transition(
+            sid,
+            committed_current,
+            current,
+            calendar_state,
+            pending,
+            int(time_autonomy_audit.get("elapsed_minutes") or 0),
+        ))
+        if time_autonomy_errors:
+            return _rejected(
+                sid,
+                "World time or NPC autonomy update was rejected. Correct the elapsed time, evidence, route, ETA or presence transition, then retry the same turn_id.",
+                turn_id=turn_id,
+                expected_turn_id=expected_turn_id,
+                next_action="applyTurnResult",
+                validation_errors=time_autonomy_errors,
+            )
         current["session_id"] = sid
         current["last_player_input"] = str(pending.get("player_input") or "")
         current["state_revision"] = new_revision
         current["last_applied_turn_id"] = turn_id
         current["updated_at"] = datetime.utcnow().isoformat()
         writes[CURRENT_STATE_FILE] = current
+        writes[CALENDAR_RUNTIME_FILE] = calendar_state
         changed.append(CURRENT_STATE_FILE)
+        changed.append(CALENDAR_RUNTIME_FILE)
 
         # Safe whole-file merges for the remaining non-character dynamic state.
         json_sections = [
             (SCENE_CONTINUITY_FILE, ["scene_continuity_patch", "scene_continuity_changes", "scene_continuity_state"]),
-            (CALENDAR_RUNTIME_FILE, ["calendar_runtime_patch", "calendar_runtime_changes", "calendar_runtime", "calendar_changes"]),
             (PHYSICAL_CONTINUITY_FILE, ["physical_continuity_patch", "physical_continuity_changes", "physical_continuity_state"]),
         ]
         for path, names in json_sections:
@@ -1082,6 +1893,7 @@ def apply_turn_result_v3(session_id: str, body: dict[str, Any] | None = Body(def
                     "memory_events": memory_audit,
                     "relationship_events": relationship_audit,
                 },
+                "time_and_autonomy_preview": time_autonomy_audit,
                 "visible_scene_output_allowed": False,
                 "next_action": "applyTurnResult",
             }
@@ -1107,6 +1919,11 @@ def apply_turn_result_v3(session_id: str, body: dict[str, Any] | None = Body(def
                 "character_memory_files": len(memory_changed),
                 "relationship_pair_files": len(relationship_changed),
             },
+            "world_update_summary": {
+                "elapsed_world_minutes": int(time_autonomy_audit.get("elapsed_minutes") or 0),
+                "npc_autonomy_updates": len(time_autonomy_audit.get("autonomy_updates") or []),
+                "missed_event_consequences": len(time_autonomy_audit.get("missed_event_consequences") or []),
+            },
         }
         audit_result = {
             **result,
@@ -1117,6 +1934,7 @@ def apply_turn_result_v3(session_id: str, body: dict[str, Any] | None = Body(def
                 "relationship_events": relationship_audit,
                 "source_rule": "Facts require in-world evidence; calendar/prompt/runtime/hidden lore are blocked; writes are limited to snapshot-loaded characters and pairs.",
             },
+            "time_and_autonomy_audit": time_autonomy_audit,
             "blocked_paths": ["characters/<id>/*.yaml", "legacy monolithic dynamic memory files"],
             "audit_note": "Internal audit record. Never render this file or its metadata as scene output.",
         }

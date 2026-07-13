@@ -1,8 +1,39 @@
-# 1206 v3 schedule placeholder.
-# Пока расписание не заполнено. Не удалять: этот файл нужен сборщику как будущий источник.
-# Правило: если секции пустые, API не должен выдумывать точные рейды/лекции/смены.
 id: location_activity_windows_1206
-status: placeholder_empty
-locations: []
-notes:
-  - "Заполнить позже: когда столовая/трензал/коридоры/двор/крыша/медблок живые или тихие."
+status: active_broad_windows
+purpose: "Плотность жизни локаций и правдоподобная доступность без случайной толпы."
+
+locations:
+  - location_zone: east_sector_dining
+    active_windows: ["06:30-09:00", "12:00-14:30", "18:00-21:00"]
+    density: medium_to_high
+    activities: ["еда", "короткие разговоры", "смена людей между делами"]
+
+  - location_zone: east_sector_training
+    active_windows: ["08:00-16:00", "18:00-21:00 voluntary"]
+    density: medium
+    activities: ["личные и отрядные тренировки", "инструкторская работа", "восстановительная нагрузка"]
+
+  - location_zone: east_sector_medical
+    active_windows: ["always_by_shift"]
+    density: function_based
+    activities: ["приём", "наблюдение", "дежурство", "сон дежурного персонала между вызовами"]
+
+  - location_zone: east_sector_command
+    active_windows: ["07:30-18:00", "after_hours_if_duty_or_emergency"]
+    density: low_to_medium
+    activities: ["планирование", "документы", "закрытые разговоры", "вызовы"]
+
+  - location_zone: east_sector_public
+    active_windows: ["07:00-22:00"]
+    density: time_dependent
+    activities: ["переходы", "работа", "короткие остановки", "быт"]
+
+  - location_zone: private_rooms
+    active_windows: ["by_resident_or_invitation"]
+    density: rare
+    activities: ["сон", "личное время", "закрытый разговор"]
+
+rules:
+  - "Именованный персонаж появляется только если его маршрут и availability совпали с местом и временем."
+  - "Фоновая жизнь не даёт NPC знаний о закрытой сцене."
+  - "Плотность локации не заменяет arrival/ETA конкретного персонажа."

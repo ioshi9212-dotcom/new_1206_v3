@@ -70,7 +70,7 @@ def _merge_start_overrides(payload: dict[str, Any], *, player_input: str = "") -
     if isinstance(current_state, dict):
         overrides.update(current_state)
     for key in [
-        "current_scene_id", "current_date", "current_day_phase", "current_location_id",
+        "current_scene_id", "current_location_id",
         "current_location_text", "pov_character_id", "active_character_ids", "scene_character_ids",
         "relationship_pair_ids", "scene_goal", "last_player_input",
     ]:
@@ -78,14 +78,25 @@ def _merge_start_overrides(payload: dict[str, Any], *, player_input: str = "") -
             overrides[key] = payload[key]
     if player_input:
         overrides["last_player_input"] = player_input
+    # A fresh 1206 start has one canonical clock. Resume/custom dates must be
+    # reached through applied time_advance, otherwise current_state and calendar
+    # would begin the same session on different days.
+    for key in (
+        "current_datetime", "current_date", "date", "current_time",
+        "current_day_phase", "time_of_day", "elapsed_world_minutes", "time_revision",
+    ):
+        overrides.pop(key, None)
     return overrides
 
 
 def _current_frame_ack(current: dict[str, Any]) -> dict[str, Any]:
     return {
         "current_scene_id": current.get("current_scene_id") or current.get("scene_id"),
+        "current_datetime": current.get("current_datetime"),
         "current_date": current.get("current_date") or current.get("date"),
+        "current_time": current.get("current_time"),
         "current_day_phase": current.get("current_day_phase") or current.get("time_of_day"),
+        "elapsed_world_minutes": int(current.get("elapsed_world_minutes") or 0),
         "current_location_id": current.get("current_location_id") or current.get("location_id"),
         "current_location_text": current.get("current_location_text") or current.get("location_text"),
         "pov_character_id": current.get("pov_character_id"),
@@ -106,14 +117,16 @@ def _pending_state_patch(payload: dict[str, Any], current: dict[str, Any], playe
         "speaking_character_ids": [],
         "addressed_character_ids": [],
         "observing_character_ids": [],
+        "remote_contact_character_ids": [],
         "relationship_focus_pair_ids": [],
         "thinking_about_character_ids": [],
     }
     for key in [
         "pov_character_id", "active_character_ids", "scene_character_ids", "present_character_ids",
         "speaking_character_ids", "addressed_character_ids", "observing_character_ids",
+        "remote_contact_character_ids", "contacted_character_ids",
         "relationship_pair_ids", "relationship_focus_pair_ids", "thinking_about_character_ids", "scene_goal",
-        "current_scene_id", "current_location_id", "current_location_text", "current_date", "current_day_phase",
+        "current_scene_id", "current_location_id", "current_location_text",
         "past_trigger_character_ids", "load_past", "past_triggered",
     ]:
         if key in payload:
@@ -126,7 +139,12 @@ def _pending_state_patch(payload: dict[str, Any], current: dict[str, Any], playe
     return patch
 
 
-def _begin_pending_turn(sid: str, player_input: str, state_patch: dict[str, Any]) -> tuple[str, dict[str, Any], dict[str, Any]]:
+def _begin_pending_turn(
+    sid: str,
+    player_input: str,
+    state_patch: dict[str, Any],
+    time_intent: dict[str, Any] | None = None,
+) -> tuple[str, dict[str, Any], dict[str, Any]]:
     """Create one protected pending turn, or return the existing idempotent one."""
     with base.session_guard(sid):
         runtime = base.read_turn_runtime(sid)
@@ -153,6 +171,7 @@ def _begin_pending_turn(sid: str, player_input: str, state_patch: dict[str, Any]
             "player_input": player_input,
             "player_input_sha256": hashlib.sha256(player_input.encode("utf-8")).hexdigest(),
             "current_state_patch": state_patch,
+            "time_intent": time_intent if isinstance(time_intent, dict) else {},
             "created_at": created_at,
         }
         runtime["pending_turn"] = pending
@@ -183,6 +202,8 @@ def health() -> dict[str, Any]:
         "turn_protocol": "pending_turn_turn_id_atomic_apply_v1",
         "context_snapshot_protocol": "one_immutable_snapshot_per_turn_with_chunk_progress",
         "character_state_protocol": "evidence_sourced_memory_and_snapshot_scoped_relationships",
+        "world_time_protocol": "monotonic_evidence_backed_clock_and_current_day_only_calendar",
+        "npc_autonomy_protocol": "offscreen_activity_location_availability_eta_and_missed_event_consequences",
         "state_storage": "atomic_json_with_recoverable_multi_file_journal",
         "large_contract_actions_disabled": True,
     }
@@ -284,6 +305,7 @@ def process_turn(session_id: str, body: dict[str, Any] | None = Body(default=Non
         sid,
         player_input,
         _pending_state_patch(payload, current_state, player_input),
+        payload.get("time_intent") if isinstance(payload.get("time_intent"), dict) else None,
     )
     effective = base.effective_current_state(sid)
     if pending_status == "conflict":
@@ -350,8 +372,17 @@ def openapi_actions() -> dict[str, Any]:
         "current_location_id": {"type": "string"},
         "current_location_text": {"type": "string"},
         "current_scene_id": {"type": "string"},
-        "current_date": {"type": "string"},
-        "current_day_phase": {"type": "string"},
+        "time_intent": {
+            "type": "object",
+            "description": "Optional protected player intent for waiting/sleep/travel/timeskip. It never changes the clock by itself; applyTurnResult still needs validated elapsed_minutes and evidence.",
+            "properties": {
+                "mode": {"type": "string"},
+                "explicit": {"type": "boolean"},
+                "target_datetime": {"type": "string"},
+                "requested_elapsed_minutes": {"type": "integer"},
+            },
+            "additionalProperties": False,
+        },
         "pov_character_id": {"type": "string"},
         "active_character_ids": _array_string(),
         "scene_character_ids": _array_string(),
@@ -359,6 +390,8 @@ def openapi_actions() -> dict[str, Any]:
         "speaking_character_ids": _array_string(),
         "addressed_character_ids": _array_string(),
         "observing_character_ids": _array_string(),
+        "remote_contact_character_ids": _array_string(),
+        "contacted_character_ids": _array_string(),
         "relationship_pair_ids": _array_string(),
         "relationship_focus_pair_ids": _array_string(),
         "thinking_about_character_ids": _array_string(),
@@ -373,6 +406,8 @@ def openapi_actions() -> dict[str, Any]:
         "addressed_characters": _array_string(),
         "present_characters": _array_string(),
         "observing_characters": _array_string(),
+        "remote_contact_character_ids": _array_string(),
+        "contacted_character_ids": _array_string(),
         "relationship_pair_ids": _array_string(),
         "relationship_focus_pair_ids": _array_string(),
         "thinking_about_character_ids": _array_string(),
@@ -431,13 +466,21 @@ def openapi_actions() -> dict[str, Any]:
         "visible_scene_text": {"type": "string", "description": "Final scene text shown to the user."},
         "final_scene_text": {"type": "string", "description": "Alias/final scene text."},
         "scene_text": {"type": "string", "description": "Alias/final scene text."},
-        "proposed_updates": {"type": "object", "description": "Dynamic state only. Character facts require source_type/evidence; relationship deltas are allowed only for pairs loaded in this turn snapshot."},
+        "proposed_updates": {"type": "object", "description": "Dynamic state only. Time/autonomy changes use time_advance, event_updates and npc_autonomy_updates; character facts require source_type/evidence; relationships are snapshot-scoped."},
         "current_state_patch": object_any,
         "current_state_changes": object_any,
         "current_state": object_any,
         "state_changes": object_any,
         "scene_continuity_patch": object_any,
-        "calendar_runtime_patch": object_any,
+        "time_advance": _object_schema({
+            "elapsed_minutes": {"type": "integer"},
+            "mode": {"type": "string", "description": "scene | travel | meal | training | rest | sleep | wait | timeskip"},
+            "reason": {"type": "string"},
+            "evidence": {"type": "string"},
+            "target_datetime": {"type": "string"},
+        }),
+        "event_updates": {"type": "array", "items": object_any, "description": "Trigger/resolve/cancel a frozen calendar event with scene evidence. Missed deadlines are escalated by Railway."},
+        "npc_autonomy_updates": {"type": "array", "items": object_any, "description": "Evidence-backed NPC activity/travel/arrival/delay updates. Akira is never controlled here; travel must respect ETA."},
         "physical_continuity_patch": object_any,
         "character_memory_updates": {"type": "object", "description": "Evidence-backed events for characters whose dynamic memory was loaded in the snapshot. Never personality/card rewrites."},
         "relationship_updates": object_any,
@@ -449,7 +492,7 @@ def openapi_actions() -> dict[str, Any]:
         "info": {
             "title": "Akira 1206 v3 Actions",
             "version": RUNTIME_VERSION,
-            "description": "Transactional API: processTurn creates turn_id; Railway freezes one context snapshot with evidence-bounded character memory and only relevant relationship pairs; ordered chunks and applyTurnResult use it; scene text is shown only after a successful atomic apply.",
+            "description": "Transactional API: processTurn creates turn_id; Railway freezes one snapshot with exact world time, NPC activity/location/availability/ETA, evidence-bounded character memory and relevant relationship pairs. applyTurnResult atomically validates time, routes, events and state before scene text is shown.",
         },
         "servers": [{"url": base.BASE_URL.rstrip("/")}],
         "paths": {

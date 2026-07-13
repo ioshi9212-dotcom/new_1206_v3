@@ -1,14 +1,15 @@
 {
   "id": "scene_state_patch_rules_1206",
   "file_type": "scene_state_update_rules",
-  "version": "1.0.0",
+  "version": "2.0.0-time-autonomy",
   "status": "active",
   "purpose": "Как обновлять состояние текущей сцены после ответа ChatGPT.",
   "allowed_scene_state_updates": [
     "location change after player/NPC action",
-    "time advancement if scene explicitly passed time",
+    "time_advance with elapsed_minutes/mode/reason/evidence if scene explicitly passed time",
     "active_characters add/remove with reason",
-    "npc_presence update if a session NPC appeared or left",
+    "npc_autonomy update for activity/travel/arrival/delay/availability",
+    "event update with evidence",
     "open_hook add/close",
     "scene_status continue/pause/end"
   ],
@@ -33,13 +34,21 @@
     ]
   },
   "time_rules": {
+    "canonical_clock": "state/calendar_runtime.json.current_datetime",
+    "default_step": "zero; another generated turn does not advance time by itself",
     "small_step": "minutes, if dialogue/action continues naturally",
     "medium_step": "tens of minutes, if travel/training/meal is summarized",
     "large_step": "hours/days only if player requested skip or scene contract permits",
-    "forbidden": "do not skip important NPC answer/question without offering choice"
+    "forbidden": [
+      "move time backward",
+      "patch current_date/current_time directly",
+      "skip important NPC answer/question without resolving the immediate window",
+      "infer Akira's unplayed action from a skip"
+    ]
   },
   "location_rules": {
     "update_requires": "clear movement or scene cut",
-    "privacy_change": "changing location changes NPC presence rules and character loading for next turn"
+    "privacy_change": "changing location changes NPC presence rules and character loading for next turn",
+    "npc_cross_zone": "requires start_travel plus arrive at/after ETA; current scene cannot carry NPC automatically"
   }
 }

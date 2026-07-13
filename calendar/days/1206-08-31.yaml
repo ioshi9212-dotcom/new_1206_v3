@@ -4,6 +4,16 @@ date: "1206-08-31"
 title: "Ночь у Джуна / позднее появление Райдена / путь к Восточному сектору"
 load_mode: current_day_only
 
+runtime_time_constraints:
+  start_datetime: "1206-08-31T23:40"
+  player_reaction_due_at: "1206-08-31T23:55"
+  raiden_after_trigger_min_delay_minutes: 18
+  samuel_people_after_search_start_min_delay_minutes: 35
+  rules:
+    - "Точное время хранится в state/calendar_runtime.json и движется только через evidence-backed time_advance."
+    - "Райден после подтверждённого выброса сначала начинает путь; появление допустимо только после ETA."
+    - "Пропущенное окно усиливает действия мира/NPC, но не дописывает выбор или мотив Акиры."
+
 обязательный_итог:
   - "К утру 1 сентября Акира должна оказаться в Восточном секторе."
   - "Рэй уже находится в Восточном секторе."

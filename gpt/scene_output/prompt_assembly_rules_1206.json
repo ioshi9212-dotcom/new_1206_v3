@@ -1,6 +1,6 @@
 {
   "id": "prompt_assembly_rules_1206",
-  "version": "v1",
+  "version": "v2_time_autonomy",
   "purpose": "Define which prompt/output rule files must be included when API sends a scene_contract to ChatGPT.",
   "required_contract": "api_contracts/scene_contract.schema.json",
   "required_response_schema": "api_contracts/chatgpt_scene_response.schema.json",
@@ -10,9 +10,11 @@
     "ChatGPT must not scan the whole repository or invent missing context.",
     "Character behavior must come from loaded full character cards and state/character_memory only.",
     "Relationship dynamics must come only from loaded relevant relationship_pairs.",
+    "Scene presence and delay must respect the frozen current_datetime plus npc_autonomy location/availability/ETA.",
     "Past files are usable only when loaded by a trigger.",
     "Forbidden context has priority over drama and prose quality.",
-    "All state changes are proposed_updates only; API applies or rejects them."
+    "All state changes are proposed_updates only; API applies or rejects them.",
+    "If time/events/offscreen NPC state changed, proposed_updates must include time_advance/event_updates/npc_autonomy_updates with evidence."
   ],
   "prompt_rule_files": [
     "gpt/scene_output/chatgpt_output_contract_rules_1206_ru.md",
@@ -35,6 +37,8 @@
     "Do not claim files were updated by ChatGPT.",
     "Do not reveal hidden past without trigger.",
     "Do not add absent characters as active speakers.",
+    "Do not teleport an NPC, arrive before ETA or freeze present NPCs through a large timeskip.",
+    "Do not convert an ignored event into an unplayed POV action or motive.",
     "Do not make major POV choices for the player.",
     "Do not output all relationship pairs or all character states.",
     "Do not use missing context as if it were loaded."

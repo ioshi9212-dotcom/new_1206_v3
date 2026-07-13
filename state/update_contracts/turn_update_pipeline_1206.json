@@ -1,7 +1,7 @@
 {
   "id": "turn_update_pipeline_1206",
   "file_type": "state_update_contract_rules",
-  "version": "1.0.0",
+  "version": "2.0.0-time-autonomy",
   "status": "active",
   "purpose": "Определяет путь от ответа ChatGPT к проверенным изменениям state после хода.",
   "core_rule": "ChatGPT не изменяет файлы напрямую. ChatGPT возвращает proposed_updates. API проверяет их и только потом применяет через apply_turn_result.",
@@ -34,7 +34,7 @@
     {
       "step": 6,
       "name": "apply_turn_result",
-      "description": "Применить только подтверждённые изменения к state/character_memory, state/relationship_pairs и current_scene_state."
+      "description": "Одной транзакцией применить подтверждённые clock/event/NPC-autonomy изменения, current_state, character_memory и relationship_pairs."
     },
     {
       "step": 7,
@@ -47,6 +47,9 @@
     "future relationship state before scene evidence",
     "new character presence without scene reason",
     "POV choice made by assistant",
+    "direct date/time rewrite instead of elapsed_minutes",
+    "NPC arrival before ETA or location teleport",
+    "missed-event consequence that scripts Akira",
     "identity/name knowledge without source",
     "large rewrites of character cards",
     "changes to characters/<id>/*.yaml from a normal scene turn"
@@ -54,6 +57,8 @@
   "allowed_targets": [
     "state/character_memory/<id>.json",
     "state/relationship_pairs/<a>__<b>.json",
+    "state/current_state.json",
+    "state/calendar_runtime.json",
     "state/session_npcs.json",
     "state/current_scene_state.json",
     "state/scene_flags.json"

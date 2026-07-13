@@ -28,6 +28,7 @@ RUNTIME_VERSION = base.APP_VERSION
 CURRENT_STATE_FILE = "state/current_state.json"
 SCENE_HISTORY_FILE = "state/scene_history.json"
 CALENDAR_RUNTIME_FILE = "state/calendar_runtime.json"
+SCHEDULE_AVAILABILITY_FILE = "state/context_loading/schedule_availability_rules_1206.json"
 STORY_LINES_FILE = "state/story_lines.json"
 START_SCENE_PATH = "scenes/start_scene.md"
 RENDER_CONTRACT_PATH = "gpt/scene_output_contract_1206.json"
@@ -541,6 +542,13 @@ def _response_obligation(role: str) -> dict[str, Any]:
         return {"required": False, "mode": "brief_observer_reaction"}
     if role == "present_reaction":
         return {"required": False, "mode": "brief_background_reaction"}
+    if role == "offscreen_decision":
+        return {
+            "required": True,
+            "mode": "offscreen_goal_decision",
+            "visible_scene_presence": False,
+            "rule": "Choose an evidence-backed activity/arrival/delay from this NPC's own goal and limits; do not give them current-scene knowledge.",
+        }
     return {"required": False, "mode": "no_unsourced_action"}
 
 
@@ -601,7 +609,11 @@ def _collect_character_ids(payload: dict[str, Any], current: dict[str, Any], sce
     _add_id(ids, current.get("pov_character_id"))
     for key in ("speaking_character_ids", "addressed_character_ids", "present_character_ids", "observing_character_ids"):
         _add_id(ids, current.get(key))
-    for key in ("speaking_characters", "addressed_characters", "present_characters", "observing_characters", "character_ids", "characters", "character_requests"):
+    for key in (
+        "speaking_characters", "addressed_characters", "present_characters", "observing_characters",
+        "remote_contact_character_ids", "contacted_character_ids",
+        "character_ids", "characters", "character_requests",
+    ):
         _add_id(ids, scene_plan.get(key))
         _add_id(ids, payload.get(key))
     _add_id(ids, current.get("scene_character_ids") or current.get("active_character_ids"))
@@ -996,8 +1008,11 @@ def _relationship_cards(sid: str, pair_ids: list[str], selection: dict[str, Any]
 def _current_state_slice(current: dict[str, Any]) -> dict[str, Any]:
     return {
         "current_scene_id": current.get("current_scene_id") or current.get("scene_id"),
+        "current_datetime": current.get("current_datetime"),
         "current_date": current.get("current_date") or current.get("date"),
+        "current_time": current.get("current_time"),
         "current_day_phase": current.get("current_day_phase") or current.get("time_of_day"),
+        "elapsed_world_minutes": int(current.get("elapsed_world_minutes") or 0),
         "current_location_id": current.get("current_location_id") or current.get("location_id"),
         "current_location_text": current.get("current_location_text") or current.get("location_text"),
         "pov_character_id": current.get("pov_character_id"),
@@ -1007,6 +1022,7 @@ def _current_state_slice(current: dict[str, Any]) -> dict[str, Any]:
         "speaking_character_ids": current.get("speaking_character_ids", []),
         "addressed_character_ids": current.get("addressed_character_ids", []),
         "observing_character_ids": current.get("observing_character_ids", []),
+        "remote_contact_character_ids": current.get("remote_contact_character_ids", []),
         "conditional_character_ids": current.get("conditional_character_ids", []),
         "relationship_pair_ids": current.get("relationship_pair_ids", []),
         "relationship_focus_pair_ids": current.get("relationship_focus_pair_ids", []),
@@ -1021,17 +1037,141 @@ def _current_state_slice(current: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _location_zone(value: Any) -> str:
+    location = str(value or "").strip().lower()
+    for prefix in ("jun_house", "east_sector", "east_coast", "off_base"):
+        if location.startswith(prefix):
+            return prefix
+    return location.split("_", 1)[0] if location else "unknown"
+
+
 def _calendar_slice(sid: str, current: dict[str, Any]) -> dict[str, Any]:
     runtime = _read_json(CALENDAR_RUNTIME_FILE, sid, {})
     if not isinstance(runtime, dict):
         runtime = {}
+    schedule_rules = _read_json(SCHEDULE_AVAILABILITY_FILE, sid, {})
+    if not isinstance(schedule_rules, dict):
+        schedule_rules = {}
+    events = runtime.get("pending_events") if isinstance(runtime.get("pending_events"), list) else []
+    active_events = [
+        item for item in events
+        if isinstance(item, dict) and str(item.get("status") or "") not in {"resolved", "cancelled"}
+    ][:8]
+    npc_autonomy = runtime.get("npc_autonomy") if isinstance(runtime.get("npc_autonomy"), dict) else {}
+    compact_autonomy: dict[str, Any] = {}
+    for cid, state in list(npc_autonomy.items())[:16]:
+        if not isinstance(state, dict):
+            continue
+        compact_autonomy[str(cid)] = {
+            "location_id": state.get("location_id"),
+            "location_zone": _location_zone(state.get("location_id")),
+            "activity": state.get("activity"),
+            "activity_category": state.get("activity_category"),
+            "availability": state.get("availability"),
+            "since": state.get("since"),
+            "destination_location_id": state.get("destination_location_id"),
+            "earliest_arrival_at": state.get("earliest_arrival_at"),
+            "busy_until": state.get("busy_until"),
+            "delay_reason": state.get("delay_reason"),
+        }
+    decision_due = [
+        str(item.get("character_id"))
+        for item in active_events
+        if item.get("character_id") and str(item.get("status") or "") in {"triggered", "decision_due"}
+    ]
+    try:
+        clock_now = datetime.fromisoformat(str(runtime.get("current_datetime") or ""))
+    except ValueError:
+        clock_now = None
+    if clock_now:
+        for cid, state in compact_autonomy.items():
+            due_reason = ""
+            for field, reason in (
+                ("earliest_arrival_at", "travel_eta_reached_choose_arrive_or_delay"),
+                ("busy_until", "busy_window_ended_choose_next_activity"),
+            ):
+                raw_due = state.get(field)
+                if not raw_due:
+                    continue
+                try:
+                    due = datetime.fromisoformat(str(raw_due))
+                except ValueError:
+                    continue
+                if due <= clock_now:
+                    due_reason = reason
+                    break
+            if due_reason:
+                state["decision_due_reason"] = due_reason
+                decision_due.append(str(cid))
+    current_day_file = str(runtime.get("current_day_file") or "")
+    current_day_text = _read_text(current_day_file, sid) if current_day_file.startswith("calendar/days/") else ""
     return {
-        "current_date": current.get("current_date") or runtime.get("current_date"),
-        "current_day_phase": current.get("current_day_phase") or runtime.get("current_day_phase"),
+        "current_datetime": runtime.get("current_datetime") or current.get("current_datetime"),
+        "current_date": runtime.get("current_date") or current.get("current_date"),
+        "current_time": runtime.get("current_time") or current.get("current_time"),
+        "current_day_phase": runtime.get("current_day_phase") or current.get("current_day_phase"),
+        "elapsed_world_minutes": int(runtime.get("elapsed_world_minutes") or current.get("elapsed_world_minutes") or 0),
+        "time_revision": int(runtime.get("time_revision") or 0),
+        "current_day_file": current_day_file or None,
+        "current_day_writer_only_excerpt": _trim(current_day_text, 1500),
+        "current_day_scope_rule": "This is the only calendar day file loaded in normal play. It pressures the world/writer and is never NPC knowledge.",
         "current_beat_id": runtime.get("current_beat_id") or current.get("current_beat_id"),
-        "pending_events": _compact(runtime.get("pending_events", []), max_chars=450, max_items=5, depth=2),
-        "rules": _compact(runtime.get("rules", []), max_chars=450, max_items=4, depth=2),
+        "active_events": _compact(active_events, max_chars=2800, max_items=8, depth=3),
+        "decision_due_character_ids": list(dict.fromkeys(decision_due)),
+        "npc_autonomy": _compact(compact_autonomy, max_chars=5200, max_items=16, depth=3),
+        "recent_world_consequences": _compact(runtime.get("world_consequences", [])[-6:] if isinstance(runtime.get("world_consequences"), list) else [], max_chars=1000, max_items=6, depth=2),
+        "staff_observations": _compact(runtime.get("staff_observations", [])[-5:] if isinstance(runtime.get("staff_observations"), list) else [], max_chars=900, max_items=5, depth=2),
+        "schedule_policy": {
+            "raider_accountability": _compact(schedule_rules.get("raider_accountability", {}), max_chars=1700, max_items=10, depth=3),
+            "time_advance": _compact(schedule_rules.get("time_advance", {}), max_chars=1200, max_items=8, depth=3),
+            "travel_and_presence": _compact(schedule_rules.get("travel_and_presence", {}), max_chars=1200, max_items=8, depth=3),
+        },
+        "rules": _compact(runtime.get("rules", []), max_chars=900, max_items=8, depth=2),
+        "writer_rules": [
+            "Clock and NPC activity are immutable for this turn snapshot. Propose evidence-backed time_advance/event_updates/npc_autonomy_updates; never edit clock fields directly.",
+            "An NPC who is elsewhere, busy, sleeping or in transit may be unavailable, delayed or refuse. Do not teleport them into the scene.",
+            "Offscreen state is writer/engine context, not character knowledge. An absent NPC does not learn the scene.",
+            "A missed event may change the world or another NPC; it never supplies an unplayed action, consent, thought or motive for Akira.",
+        ],
     }
+
+
+def _presence_gate(
+    sid: str,
+    cid: str,
+    role: str,
+    current: dict[str, Any],
+    scene_plan: dict[str, Any],
+    calendar_context: dict[str, Any],
+) -> tuple[bool, str]:
+    if role in {"pov", "referenced", "offscreen_decision"}:
+        return True, "role_does_not_claim_local_presence"
+    committed = _read_json(CURRENT_STATE_FILE, sid, {})
+    committed_present = {
+        _canonical_id(value)
+        for value in (committed.get("present_character_ids") or [])
+    } if isinstance(committed, dict) else set()
+    remote_ids: list[str] = []
+    for source in (current, scene_plan):
+        values = source.get("remote_contact_character_ids") or source.get("contacted_character_ids") or []
+        if isinstance(values, list):
+            remote_ids.extend(_canonical_id(value) for value in values)
+    if cid in remote_ids:
+        return True, "explicit_remote_contact"
+    autonomy = calendar_context.get("npc_autonomy") if isinstance(calendar_context.get("npc_autonomy"), dict) else {}
+    state = autonomy.get(cid) if isinstance(autonomy.get(cid), dict) else {}
+    if not state:
+        return (cid in committed_present, "no_autonomy_state_and_not_already_present")
+    availability = str(state.get("availability") or "unknown")
+    if availability in {"in_transit", "unavailable", "off_base", "sleeping", "unavailable_until_1206-09-21"}:
+        return False, f"availability={availability}"
+    scene_zone = _location_zone(current.get("current_location_id") or current.get("location_id"))
+    npc_zone = _location_zone(state.get("location_id"))
+    if cid not in committed_present and scene_zone != "unknown" and npc_zone not in {"unknown", scene_zone}:
+        return False, f"npc_zone={npc_zone};scene_zone={scene_zone}"
+    if cid not in committed_present and availability not in {"present", "nearby", "available"}:
+        return False, f"availability={availability};arrival_not_committed"
+    return True, "present_or_arrival_already_committed"
 
 
 def _history_slice(sid: str, depth: int = 4) -> list[dict[str, Any]]:
@@ -1136,7 +1276,10 @@ def _render_contract_small() -> dict[str, Any]:
         "source_file": RENDER_CONTRACT_PATH,
         "must_be_last_writer_instruction": True,
         "dialogue_format_required": data.get("dialogue_format_required") or "**Имя/видимый дескриптор** — реплика.",
+        "time_header_rule": "Render the frozen current_time/current_day_phase; do not invent a later header before applyTurnResult validates time_advance.",
         "unknown_names_rule": "If POV/speaker does not know a name, use visible descriptor, not engine id/display_name.",
+        "autonomy_rule": "Presence/arrival/delay must match npc_autonomy and ETA. Propose time_advance/event_updates/npc_autonomy_updates when they changed.",
+        "missed_event_rule": "World/NPC consequences are allowed; unplayed Akira actions, thoughts, consent and motives are forbidden.",
         "bottom_blocks_rule": "Keep choice/options/status blocks; do not expose hidden lore as POV thoughts.",
     }
 
@@ -1178,6 +1321,7 @@ def _build_turn_contract(sid: str, payload: dict[str, Any]) -> dict[str, Any]:
         "speaking_characters", "addressed_characters", "present_characters", "observing_characters",
         "character_ids", "characters", "character_requests", "relationship_pair_ids",
         "relationship_focus_pair_ids", "thinking_about_character_ids",
+        "remote_contact_character_ids", "contacted_character_ids",
     ):
         if key not in scene_plan and key in payload:
             scene_plan[key] = payload[key]
@@ -1200,7 +1344,10 @@ def _build_turn_contract(sid: str, payload: dict[str, Any]) -> dict[str, Any]:
         }]
         return error
 
+    calendar_context = _calendar_slice(sid, current)
     requested_cids = _collect_character_ids(payload, current, scene_plan, player_input)
+    for cid in calendar_context.get("decision_due_character_ids", []):
+        _add_id(requested_cids, cid)
     source_audit = {cid: _character_source_audit(sid, cid) for cid in requested_cids}
     if pov_id not in source_audit:
         source_audit[pov_id] = _character_source_audit(sid, pov_id)
@@ -1223,8 +1370,6 @@ def _build_turn_contract(sid: str, payload: dict[str, Any]) -> dict[str, Any]:
 
     invalid_cids = [cid for cid in requested_cids if not source_audit[cid]["valid"]]
     valid_cids = [cid for cid in requested_cids if source_audit[cid]["valid"]]
-    cids = valid_cids[:7]
-    omitted_cids = valid_cids[7:]
     diagnostics: list[dict[str, Any]] = []
     if invalid_cids:
         diagnostics.append({
@@ -1234,6 +1379,38 @@ def _build_turn_contract(sid: str, payload: dict[str, Any]) -> dict[str, Any]:
             "character_ids": invalid_cids,
             "missing_sources": {cid: source_audit[cid]["missing_sources"] for cid in invalid_cids},
         })
+    candidate_roles = {cid: _role_for(cid, current, scene_plan) for cid in valid_cids}
+    for cid in calendar_context.get("decision_due_character_ids", []):
+        canonical = _canonical_id(cid)
+        if canonical in candidate_roles and candidate_roles[canonical] == "referenced":
+            candidate_roles[canonical] = "offscreen_decision"
+    inferred_all = _infer_direct_addressed_ids(player_input, valid_cids)
+    for cid in inferred_all:
+        if cid != pov_id:
+            candidate_roles[cid] = "addressed"
+
+    available_cids: list[str] = []
+    blocked_presence: list[dict[str, str]] = []
+    for cid in valid_cids:
+        allowed, reason = _presence_gate(
+            sid, cid, str(candidate_roles.get(cid) or "referenced"), current, scene_plan, calendar_context
+        )
+        if allowed:
+            available_cids.append(cid)
+        else:
+            candidate_roles[cid] = "referenced"
+            available_cids.append(cid)
+            blocked_presence.append({"character_id": cid, "reason": reason})
+    cids = available_cids[:7]
+    omitted_cids = available_cids[7:]
+    if blocked_presence:
+        diagnostics.append({
+            "severity": "warning",
+            "fallback_blocked": "npc_teleport_or_unavailable_presence",
+            "reason": "Characters whose committed location/availability cannot support this scene were downgraded to referenced-only context.",
+            "characters": blocked_presence,
+            "needed_input": "Play or apply a valid travel/arrival/contact transition first; an unavailable NPC may instead delay or refuse.",
+        })
     if omitted_cids:
         diagnostics.append({
             "severity": "warning",
@@ -1242,10 +1419,11 @@ def _build_turn_contract(sid: str, payload: dict[str, Any]) -> dict[str, Any]:
             "omitted_character_ids": omitted_cids,
             "needed_input": "Delay them or make their relevance explicit in a later turn.",
         })
-    roles = {cid: _role_for(cid, current, scene_plan) for cid in cids}
+    roles = {cid: candidate_roles[cid] for cid in cids}
     inferred_addressed = _infer_direct_addressed_ids(player_input, cids)
+    blocked_presence_ids = {item["character_id"] for item in blocked_presence}
     for cid in inferred_addressed:
-        if cid != pov_id:
+        if cid != pov_id and cid not in blocked_presence_ids:
             roles[cid] = "addressed"
     memory_character_ids = [cid for cid in cids if roles.get(cid) in ACTIVE_MEMORY_ROLES]
     relationship_pair_ids, relationship_selection = _select_relationship_pairs(
@@ -1292,6 +1470,16 @@ def _build_turn_contract(sid: str, payload: dict[str, Any]) -> dict[str, Any]:
         "player_input": player_input,
         "player_input_source": "protected_pending_turn",
         "current_frame": _current_state_slice(current),
+        "time_context": {
+            "current_datetime": calendar_context.get("current_datetime"),
+            "current_date": calendar_context.get("current_date"),
+            "current_time": calendar_context.get("current_time"),
+            "current_day_phase": calendar_context.get("current_day_phase"),
+            "current_day_file": calendar_context.get("current_day_file"),
+            "time_revision": calendar_context.get("time_revision"),
+            "decision_due_character_ids": calendar_context.get("decision_due_character_ids", []),
+            "rule": "Full frozen calendar/autonomy state is in location_inventory_calendar_render; this summary pins the turn clock.",
+        },
         "scene_plan_used": scene_plan,
         "needs_decided_by_railway": needs,
         "past_trigger_terms": past_trigger_terms,
@@ -1312,6 +1500,9 @@ def _build_turn_contract(sid: str, payload: dict[str, Any]) -> dict[str, Any]:
             ],
             "pov_rule": "POV full card is mandatory. Never insert Akira merely because she is the protagonist.",
             "npc_rule": "Active NPC behavior must come from goal + knowledge + unknowns + reaction triggers, never generic scene convenience.",
+            "autonomy_rule": "Use frozen time_context: NPCs continue their own activity offscreen, may be unavailable/delayed, and cannot cross locations before ETA.",
+            "time_rule": "Propose explicit time_advance with elapsed_minutes/mode/evidence. Never rewrite current date/time directly and never move time backward.",
+            "ignored_event_rule": "A missed hook changes world pressure or autonomous NPC actions only; never invent an unplayed Akira action, thought, consent or motive.",
             "addressed_rule": "A directly addressed full NPC must answer, gesture, refuse, interrupt or use meaningful silence; it does not have to comply.",
             "background_rule": "Present non-focus characters may add one short visible reaction/intervention when relevant, without taking over the scene.",
             "personality_rule": "A scene may change mood, trust or tactics, never rewrite static personality/voice for convenience.",
@@ -1389,6 +1580,7 @@ def _chunk_content(
                 "NPCs may refuse, delay, lie within their knowledge, interrupt, stay or leave according to their own goals and limits; player wishes do not control them.",
                 "Directly addressed full characters must visibly respond, but never have to agree.",
                 "Background participants get only short relevant reactions unless the scene gives them a real reason to take focus.",
+                "An offscreen_decision character acts only in engine/world state: choose arrival, delay, availability or next activity without making them witness the current scene.",
                 "Mood, trust and tactics may change; static personality, voice and values cannot be rewritten for scene convenience.",
                 "Internal goals may drive NPC action but are not POV knowledge and cannot be explained before visible disclosure.",
                 "Appearance is brief unless deep_appearance=true; never invent hair/age/height against identity_brief.",
@@ -1400,6 +1592,7 @@ def _chunk_content(
                 "goal_driven_turn": "Continue from the NPC's goal, knowledge and limits, never as an exposition/helper button.",
                 "brief_observer_reaction": "React briefly only to visible/audible relevant stimulus and do not steal focus.",
                 "brief_background_reaction": "A short gesture/look/intervention may keep the room alive without taking the lead.",
+                "offscreen_goal_decision": "Propose an autonomy update from the character's own goal/location/ETA; no local speech, observation or scene knowledge.",
                 "no_unsourced_action": "Referenced/absent character does not speak, observe or learn this scene without an in-world source.",
             },
         }
@@ -1431,15 +1624,16 @@ def _chunk_content(
     if chunk_type == "location_inventory_calendar_render":
         scene_plan = contract.get("scene_plan_used") if isinstance(contract.get("scene_plan_used"), dict) else {}
         start_scene_available = bool(current.get("start_scene_exact_text_required") and not current.get("start_scene_completed"))
+        frozen_time_context = _calendar_slice(sid, current)
         return {
             "location": _location_slice(current, scene_plan, needs),
             "inventory": _inventory_slice(current, needs),
-            "calendar": _calendar_slice(sid, current),
+            "calendar_and_npc_autonomy": frozen_time_context,
             "start_scene": {"exact_text_required": start_scene_available, "text_endpoint": f"/api/v3/sessions/{sid}/start-scene-text" if start_scene_available else None},
             "final_render_contract": _render_contract_small(),
             "draft_after_this_if_no_more_chunks": True,
             "apply_before_visible_output": True,
-            "apply_instruction": "Draft the scene internally, then call applyTurnResult with contract.turn_id. Show only visible_scene_text returned by status=applied/idempotent replay.",
+            "apply_instruction": "Draft internally, then call applyTurnResult with contract.turn_id plus evidence-backed time_advance/event_updates/npc_autonomy_updates when anything elapsed or changed offscreen. Show only visible_scene_text returned by status=applied/idempotent replay.",
         }
     if chunk_type == "energy_lore":
         return _energy_card(sid, cids)
