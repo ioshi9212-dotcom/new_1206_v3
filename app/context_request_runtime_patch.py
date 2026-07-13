@@ -195,10 +195,45 @@ def _read_json(path: str, sid: str, default: Any) -> Any:
 
 def _ensure_current(sid: str) -> dict[str, Any]:
     base.ensure_session(sid)
-    current = _read_json(CURRENT_STATE_FILE, sid, {})
+    current = base.effective_current_state(sid)
     if not isinstance(current, dict) or not current:
         current = base.initialize_start_session(sid, {"last_player_input": "начнем"})
     return current
+
+
+def _payload_turn_id(payload: dict[str, Any]) -> str:
+    candidates: list[Any] = [payload.get("turn_id")]
+    for key in ("turn_contract", "scene_response", "metadata"):
+        nested = payload.get(key)
+        if isinstance(nested, dict):
+            candidates.append(nested.get("turn_id"))
+            metadata = nested.get("metadata")
+            if isinstance(metadata, dict):
+                candidates.append(metadata.get("turn_id"))
+    for value in candidates:
+        text = str(value or "").strip()
+        if text:
+            return text
+    return ""
+
+
+def _turn_contract_error(sid: str, current: dict[str, Any], error: str, next_action: str) -> dict[str, Any]:
+    pending = base.get_pending_turn(sid)
+    runtime = base.read_turn_runtime(sid)
+    return {
+        "success": False,
+        "session_id": sid,
+        "runtime_version": RUNTIME_VERSION,
+        "mode": "v3_turn_contract_rejected",
+        "error": error,
+        "turn_id": pending.get("turn_id") if pending else None,
+        "state_revision": int(runtime.get("state_revision") or 0),
+        "current_frame": _current_state_slice(current),
+        "required_chunks": [],
+        "total_chunks": 0,
+        "next_action": next_action,
+        "visible_scene_output_allowed": False,
+    }
 
 
 def _canonical_id(value: Any) -> str:
@@ -623,8 +658,38 @@ def _render_contract_small() -> dict[str, Any]:
 
 def _build_turn_contract(sid: str, payload: dict[str, Any]) -> dict[str, Any]:
     current = _ensure_current(sid)
+    pending = base.get_pending_turn(sid)
+    if not pending:
+        if current.get("start_scene_exact_text_required") and not current.get("start_scene_completed"):
+            return _turn_contract_error(
+                sid,
+                current,
+                "No gameplay turn is pending. The canonical start scene must be shown first.",
+                "getStartSceneText",
+            )
+        return _turn_contract_error(
+            sid,
+            current,
+            "No gameplay turn is pending. Call processTurn with the latest non-empty player input.",
+            "waitForPlayerInput",
+        )
+    supplied_turn_id = _payload_turn_id(payload)
+    if not supplied_turn_id:
+        return _turn_contract_error(
+            sid,
+            current,
+            "turn_id is required. Use the exact value returned by processTurn.",
+            "getTurnContract",
+        )
+    if supplied_turn_id != str(pending.get("turn_id") or ""):
+        return _turn_contract_error(
+            sid,
+            current,
+            "turn_id does not match the protected pending turn; stale context was rejected.",
+            "getTurnContract",
+        )
     scene_plan = payload.get("scene_plan") if isinstance(payload.get("scene_plan"), dict) else {}
-    player_input = _scene_text(payload, current, scene_plan)
+    player_input = str(pending.get("player_input") or "")
     needs = _needs(payload, current, scene_plan, player_input)
     cids = _collect_character_ids(payload, current, scene_plan, player_input)
     roles = {cid: _role_for(cid, current, scene_plan) for cid in cids}
@@ -645,7 +710,11 @@ def _build_turn_contract(sid: str, payload: dict[str, Any]) -> dict[str, Any]:
         "session_id": sid,
         "runtime_version": RUNTIME_VERSION,
         "mode": "v3_hybrid_turn_contract",
+        "turn_id": pending.get("turn_id"),
+        "turn_number": pending.get("turn_number"),
+        "base_revision": pending.get("base_revision"),
         "player_input": player_input,
+        "player_input_source": "protected_pending_turn",
         "current_frame": _current_state_slice(current),
         "scene_plan_used": scene_plan,
         "needs_decided_by_railway": needs,
@@ -653,24 +722,70 @@ def _build_turn_contract(sid: str, payload: dict[str, Any]) -> dict[str, Any]:
         "character_roles": roles,
         "required_chunks": chunks,
         "total_chunks": len(chunks),
-        "must_load_rule": "Call getRequiredContextManifest, then getRequiredContextChunk from chunk_index=0 until has_more=false before writing the scene.",
+        "must_load_rule": "Use this same turn_id for manifest, every chunk and applyTurnResult. Draft only after all chunks; do not show scene text before successful apply.",
         "next_action": "getRequiredContextManifest",
+        "visible_scene_output_allowed": False,
     }
 
 
 def _manifest_from_contract(contract: dict[str, Any]) -> dict[str, Any]:
+    if not contract.get("success"):
+        return {
+            "success": False,
+            "session_id": contract.get("session_id"),
+            "runtime_version": RUNTIME_VERSION,
+            "mode": "v3_required_context_manifest_rejected",
+            "error": contract.get("error") or "Turn contract is invalid.",
+            "turn_id": contract.get("turn_id"),
+            "total_chunks": 0,
+            "chunks": [],
+            "next_action": contract.get("next_action") or "getTurnContract",
+            "next_chunk_index": None,
+            "visible_scene_output_allowed": False,
+        }
     chunks = contract.get("required_chunks") if isinstance(contract.get("required_chunks"), list) else []
     return {
         "success": True,
         "session_id": contract.get("session_id"),
         "runtime_version": RUNTIME_VERSION,
         "mode": "v3_hybrid_required_context_manifest",
+        "turn_id": contract.get("turn_id"),
+        "base_revision": contract.get("base_revision"),
         "total_chunks": len(chunks),
         "chunks": chunks,
-        "load_order_rule": "Load chunks in numeric order. Do not write scene until the last returned chunk has has_more=false.",
-        "next_action": "getRequiredContextChunk" if chunks else "writeScene",
+        "load_order_rule": "Load chunks in numeric order with this turn_id. After the last chunk, draft internally and call applyTurnResult before any visible scene output.",
+        "next_action": "getRequiredContextChunk" if chunks else "getTurnContract",
         "next_chunk_index": 0 if chunks else None,
+        "visible_scene_output_allowed": False,
     }
+
+
+def _validated_contract(sid: str, payload: dict[str, Any]) -> dict[str, Any]:
+    supplied_contract = payload.get("turn_contract") if isinstance(payload.get("turn_contract"), dict) else None
+    if not supplied_contract:
+        return _build_turn_contract(sid, payload)
+    current = _ensure_current(sid)
+    pending = base.get_pending_turn(sid)
+    supplied_turn_id = _payload_turn_id(payload)
+    contract_turn_id = str(supplied_contract.get("turn_id") or "")
+    if not pending:
+        return _turn_contract_error(sid, current, "The pending turn was already applied or reset; stale context was rejected.", "waitForPlayerInput")
+    expected = str(pending.get("turn_id") or "")
+    if not supplied_turn_id or supplied_turn_id != expected or contract_turn_id != expected:
+        return _turn_contract_error(sid, current, "Context contract turn_id does not match the protected pending turn.", "getTurnContract")
+    if not supplied_contract.get("success"):
+        return _turn_contract_error(sid, current, str(supplied_contract.get("error") or "Turn contract is invalid."), "getTurnContract")
+
+    # Never trust client-returned chunk lists or state slices. Rebuild them from
+    # Railway state and the protected input; only the earlier scene plan is reused.
+    canonical_payload = dict(payload)
+    canonical_payload.pop("turn_contract", None)
+    if not isinstance(canonical_payload.get("scene_plan"), dict):
+        scene_plan = supplied_contract.get("scene_plan_used")
+        if isinstance(scene_plan, dict):
+            canonical_payload["scene_plan"] = scene_plan
+    canonical_payload["turn_id"] = expected
+    return _build_turn_contract(sid, canonical_payload)
 
 
 def _chunk_content(sid: str, contract: dict[str, Any], chunk_index: int) -> dict[str, Any]:
@@ -714,7 +829,9 @@ def _chunk_content(sid: str, contract: dict[str, Any], chunk_index: int) -> dict
             "calendar": _calendar_slice(sid, current),
             "start_scene": {"exact_text_required": start_scene_available, "text_endpoint": f"/api/v3/sessions/{sid}/start-scene-text" if start_scene_available else None},
             "final_render_contract": _render_contract_small(),
-            "write_after_this_if_no_more_chunks": True,
+            "draft_after_this_if_no_more_chunks": True,
+            "apply_before_visible_output": True,
+            "apply_instruction": "Draft the scene internally, then call applyTurnResult with contract.turn_id. Show only visible_scene_text returned by status=applied/idempotent replay.",
         }
     if chunk_type == "energy_lore":
         return _energy_card(sid, cids)
@@ -747,16 +864,36 @@ for _path, _method in [
 def get_preflight(session_id: str) -> dict[str, Any]:
     sid = _sid(session_id)
     current = _ensure_current(sid)
+    runtime = base.read_turn_runtime(sid)
+    pending = runtime.get("pending_turn") if isinstance(runtime.get("pending_turn"), dict) else None
+    start_scene_required = bool(current.get("start_scene_exact_text_required") and not current.get("start_scene_completed"))
+    if pending:
+        next_action = "getTurnContract"
+        writer_note = "Resume the protected pending turn_id. Do not replace it with another player input."
+    elif start_scene_required:
+        next_action = "getStartSceneText"
+        writer_note = "Show exact start scene text, then stop and wait for non-empty player input."
+    else:
+        next_action = "waitForPlayerInput"
+        writer_note = "No turn is pending. Wait for non-empty player input, then call processTurn."
     return {
         "success": True,
         "session_id": sid,
         "runtime_version": RUNTIME_VERSION,
         "mode": "v3_preflight_hybrid_small",
+        "state_revision": int(runtime.get("state_revision") or 0),
+        "pending_turn": {
+            "turn_id": pending.get("turn_id"),
+            "turn_number": pending.get("turn_number"),
+            "base_revision": pending.get("base_revision"),
+            "player_input": pending.get("player_input"),
+        } if pending else None,
         "current_state": _current_state_slice(current),
         "calendar": _calendar_slice(sid, current),
         "recent_scene_history": _history_slice(sid, 3),
-        "next_action": "getTurnContract",
-        "writer_note": "Do not write scene from preflight. Call getTurnContract, manifest, then all required chunks.",
+        "next_action": next_action,
+        "writer_note": writer_note,
+        "visible_scene_output_allowed": start_scene_required and not pending,
     }
 
 
@@ -770,9 +907,7 @@ def get_turn_contract(session_id: str, body: dict[str, Any] | None = Body(defaul
 def get_required_context_manifest(session_id: str, body: dict[str, Any] | None = Body(default=None)) -> dict[str, Any]:
     sid = _sid(session_id)
     payload = _payload(body)
-    contract = payload.get("turn_contract") if isinstance(payload.get("turn_contract"), dict) else None
-    if not contract:
-        contract = _build_turn_contract(sid, payload)
+    contract = _validated_contract(sid, payload)
     return _manifest_from_contract(contract)
 
 
@@ -780,12 +915,34 @@ def get_required_context_manifest(session_id: str, body: dict[str, Any] | None =
 def get_required_context_chunk(session_id: str, body: dict[str, Any] | None = Body(default=None)) -> dict[str, Any]:
     sid = _sid(session_id)
     payload = _payload(body)
-    contract = payload.get("turn_contract") if isinstance(payload.get("turn_contract"), dict) else None
-    if not contract:
-        contract = _build_turn_contract(sid, payload)
+    contract = _validated_contract(sid, payload)
+    if not contract.get("success"):
+        return {
+            "success": False,
+            "session_id": sid,
+            "runtime_version": RUNTIME_VERSION,
+            "mode": "v3_required_context_chunk_rejected",
+            "turn_id": contract.get("turn_id"),
+            "error": contract.get("error") or "Invalid turn contract.",
+            "next_action": contract.get("next_action") or "getTurnContract",
+            "visible_scene_output_allowed": False,
+        }
     chunk_index = _requested_chunk_index(payload, default=0)
     chunks = contract.get("required_chunks") if isinstance(contract.get("required_chunks"), list) else []
     total = len(chunks)
+    if chunk_index < 0 or chunk_index >= total:
+        return {
+            "success": False,
+            "session_id": sid,
+            "runtime_version": RUNTIME_VERSION,
+            "mode": "v3_required_context_chunk_rejected",
+            "turn_id": contract.get("turn_id"),
+            "error": f"chunk_index {chunk_index} is outside required range 0..{max(total - 1, 0)}.",
+            "total_chunks": total,
+            "next_action": "getRequiredContextChunk" if total else "getTurnContract",
+            "next_chunk_index": 0 if total else None,
+            "visible_scene_output_allowed": False,
+        }
     has_more = chunk_index + 1 < total
     chunk_meta = chunks[chunk_index] if 0 <= chunk_index < total and isinstance(chunks[chunk_index], dict) else {"chunk_index": chunk_index, "chunk_type": "unknown"}
     return {
@@ -793,14 +950,18 @@ def get_required_context_chunk(session_id: str, body: dict[str, Any] | None = Bo
         "session_id": sid,
         "runtime_version": RUNTIME_VERSION,
         "mode": "v3_hybrid_required_context_chunk_v5",
+        "turn_id": contract.get("turn_id"),
+        "base_revision": contract.get("base_revision"),
         "chunk_index": chunk_index,
         "chunk_type": chunk_meta.get("chunk_type"),
         "total_chunks": total,
         "has_more": has_more,
         "next_chunk_index": chunk_index + 1 if has_more else None,
         "content": _chunk_content(sid, contract, chunk_index),
-        "next_action": "getRequiredContextChunk" if has_more else "writeScene",
-        "write_scene_allowed": not has_more,
+        "next_action": "getRequiredContextChunk" if has_more else "draftThenApplyTurnResult",
+        "draft_scene_allowed": not has_more,
+        "visible_scene_output_allowed": False,
+        "after_last_chunk": "Draft internally; call applyTurnResult with this turn_id; show only the scene text returned after successful apply." if not has_more else None,
     }
 
 
@@ -811,15 +972,17 @@ def request_context_slice(session_id: str, body: dict[str, Any] | None = Body(de
     contract = _build_turn_contract(sid, payload)
     manifest = _manifest_from_contract(contract)
     return {
-        "success": True,
+        "success": bool(contract.get("success")),
         "session_id": sid,
         "runtime_version": RUNTIME_VERSION,
         "mode": "v3_legacy_context_request_points_to_manifest_chunks",
         "do_not_write_scene_yet": True,
         "turn_contract": contract,
         "required_context_manifest": manifest,
-        "next_action": "getRequiredContextChunk",
-        "next_chunk_index": 0,
+        "turn_id": contract.get("turn_id"),
+        "next_action": "getRequiredContextChunk" if contract.get("success") else contract.get("next_action"),
+        "next_chunk_index": 0 if contract.get("success") else None,
+        "visible_scene_output_allowed": False,
     }
 
 
@@ -845,7 +1008,7 @@ def get_start_scene_text(session_id: str) -> dict[str, Any]:
         "mode": "v3_start_scene_text",
         "exact_text_required": required,
         "exact_text": _extract_start_scene_text() if required else "",
-        "after_output_instruction": "After outputting exact_text, wait for the player. On next input call processTurn.",
+        "after_output_instruction": "Output exact_text once, then stop. Do not call processTurn with an empty/stale input and do not continue the scene. Wait for the player's next non-empty message.",
     }
 
 

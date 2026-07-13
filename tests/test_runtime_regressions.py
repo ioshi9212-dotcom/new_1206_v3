@@ -55,6 +55,31 @@ def test_repository_canon_beats_stale_seed_copy(client: TestClient) -> None:
     assert base.read_text("scenes/start_scene.md") == actual
 
 
+def test_start_scene_stops_and_empty_followup_cannot_create_turn(client: TestClient) -> None:
+    sid = "start-stop-proof"
+    client.post("/api/v1/start", json={"session_id": sid})
+
+    preflight = client.get(f"/api/v3/sessions/{sid}/preflight").json()
+    start_scene = client.get(f"/api/v3/sessions/{sid}/start-scene-text").json()
+    no_turn_contract = client.post(
+        f"/api/v3/sessions/{sid}/turn-contract",
+        json={"turn_id": "turn_not_created"},
+    ).json()
+    empty = client.post(
+        f"/api/v1/sessions/{sid}/turn",
+        json={"player_input": "   "},
+    ).json()
+
+    assert preflight["next_action"] == "getStartSceneText"
+    assert start_scene["exact_text_required"] is True
+    assert start_scene["exact_text"]
+    assert "stop" in start_scene["after_output_instruction"].lower()
+    assert no_turn_contract["success"] is False
+    assert no_turn_contract["required_chunks"] == []
+    assert empty["success"] is False
+    assert base.get_pending_turn(sid) is None
+
+
 def test_director_understands_inflected_names_without_forbidding_them(client: TestClient) -> None:
     response = client.post(
         "/api/director/drafts/start",
@@ -75,9 +100,13 @@ def test_director_understands_inflected_names_without_forbidding_them(client: Te
 def test_lore_chunk_uses_existing_canon_files(client: TestClient) -> None:
     sid = "lore-proof"
     client.post("/api/v1/start", json={"session_id": sid})
+    turn_id = client.post(
+        f"/api/v1/sessions/{sid}/turn",
+        json={"player_input": "Что такое кайросы и энергия?"},
+    ).json()["turn_id"]
     contract = client.post(
         f"/api/v3/sessions/{sid}/turn-contract",
-        json={"player_input": "Что такое кайросы и энергия?"},
+        json={"turn_id": turn_id},
     ).json()
     lore_index = next(
         item["chunk_index"]
@@ -86,9 +115,235 @@ def test_lore_chunk_uses_existing_canon_files(client: TestClient) -> None:
     )
     chunk = client.post(
         f"/api/v3/sessions/{sid}/required-context/chunk",
-        json={"chunk_index": lore_index, "turn_contract": contract},
+        json={"turn_id": turn_id, "chunk_index": lore_index, "turn_contract": contract},
     ).json()
 
     files = chunk["content"]["files"]
     assert files
     assert all((base.REPO_ROOT / item["path"]).is_file() for item in files)
+
+
+def test_process_turn_protects_one_input_and_pins_all_context(client: TestClient) -> None:
+    sid = "pending-proof"
+    client.post("/api/v1/start", json={"session_id": sid})
+    committed_before = base.read_json("state/current_state.json", sid, {})
+
+    first = client.post(
+        f"/api/v1/sessions/{sid}/turn",
+        json={"player_input": "Я бесшумно открываю дверь."},
+    ).json()
+    turn_id = first["turn_id"]
+
+    assert first["success"] is True
+    assert first["state_revision"] == 0
+    assert base.read_json("state/current_state.json", sid, {}) == committed_before
+
+    duplicate = client.post(
+        f"/api/v1/sessions/{sid}/turn",
+        json={"player_input": "Я бесшумно открываю дверь."},
+    ).json()
+    assert duplicate["turn_id"] == turn_id
+    assert duplicate["pending_turn_reused"] is True
+
+    conflict = client.post(
+        f"/api/v1/sessions/{sid}/turn",
+        json={"player_input": "Нет, остаюсь в комнате."},
+    ).json()
+    assert conflict["success"] is False
+    assert conflict["pending_turn_id"] == turn_id
+
+    missing = client.post(f"/api/v3/sessions/{sid}/turn-contract", json={}).json()
+    stale = client.post(f"/api/v3/sessions/{sid}/turn-contract", json={"turn_id": "turn_stale"}).json()
+    contract = client.post(f"/api/v3/sessions/{sid}/turn-contract", json={"turn_id": turn_id}).json()
+
+    assert missing["success"] is False
+    assert stale["success"] is False
+    assert contract["success"] is True
+    assert contract["turn_id"] == turn_id
+    assert contract["player_input"] == "Я бесшумно открываю дверь."
+    assert contract["current_frame"]["start_scene_completed"] is True
+
+    manifest = client.post(
+        f"/api/v3/sessions/{sid}/required-context/manifest",
+        json={"turn_id": turn_id, "turn_contract": contract},
+    ).json()
+    tampered_contract = dict(contract)
+    tampered_contract["required_chunks"] = []
+    rebuilt_manifest = client.post(
+        f"/api/v3/sessions/{sid}/required-context/manifest",
+        json={"turn_id": turn_id, "turn_contract": tampered_contract},
+    ).json()
+    last_chunk = client.post(
+        f"/api/v3/sessions/{sid}/required-context/chunk",
+        json={"turn_id": turn_id, "chunk_index": manifest["total_chunks"] - 1, "turn_contract": contract},
+    ).json()
+    assert manifest["turn_id"] == turn_id
+    assert rebuilt_manifest["total_chunks"] == manifest["total_chunks"] > 0
+    assert last_chunk["turn_id"] == turn_id
+    assert last_chunk["draft_scene_allowed"] is True
+    assert last_chunk["visible_scene_output_allowed"] is False
+    assert last_chunk["next_action"] == "draftThenApplyTurnResult"
+
+
+def test_direct_process_turn_initializes_session_owned_state(client: TestClient) -> None:
+    sid = "direct-process-proof"
+    turn = client.post(
+        f"/api/v1/sessions/{sid}/turn",
+        json={"player_input": "Осматриваю комнату."},
+    ).json()
+
+    assert turn["success"] is True
+    assert turn["turn_id"]
+    current_path = base.SESSIONS_DIR / sid / "state" / "current_state.json"
+    runtime_path = base.SESSIONS_DIR / sid / base.TURN_RUNTIME_FILE
+    assert current_path.is_file()
+    assert runtime_path.is_file()
+    assert base.read_session_json("state/current_state.json", sid, {})["session_id"] == sid
+
+
+def test_apply_is_required_idempotent_and_revisioned(client: TestClient) -> None:
+    sid = "apply-proof"
+    client.post("/api/v1/start", json={"session_id": sid})
+    turn_id = client.post(
+        f"/api/v1/sessions/{sid}/turn",
+        json={"player_input": "Спускаюсь вниз и молча смотрю на незнакомцев."},
+    ).json()["turn_id"]
+
+    missing_id = client.post(
+        f"/api/v1/sessions/{sid}/apply-turn-result",
+        json={"visible_scene_text": "Сцена."},
+    ).json()
+    wrong_id = client.post(
+        f"/api/v1/sessions/{sid}/apply-turn-result",
+        json={"turn_id": "turn_wrong", "visible_scene_text": "Сцена."},
+    ).json()
+    empty_scene = client.post(
+        f"/api/v1/sessions/{sid}/apply-turn-result",
+        json={"turn_id": turn_id, "visible_scene_text": ""},
+    ).json()
+    assert missing_id["status"] == "rejected"
+    assert wrong_id["status"] == "rejected"
+    assert empty_scene["status"] == "rejected"
+
+    apply_body = {
+        "scene_response": {"turn_id": turn_id},
+        "visible_scene_text": "Акира остановилась на нижней ступени. Разговор внизу оборвался.",
+        "proposed_updates": {
+            "character_memory_updates": [
+                {"character_id": "emma", "memory": ["Увидела Акиру на лестнице."]}
+            ],
+            "relationship_pair_updates": [
+                {"pair_id": "akira__emma", "tension": 2}
+            ],
+        },
+    }
+    applied = client.post(f"/api/v1/sessions/{sid}/apply-turn-result", json=apply_body).json()
+
+    assert applied["status"] == "applied"
+    assert applied["turn_id"] == turn_id
+    assert applied["state_revision"] == 1
+    assert applied["visible_scene_output_allowed"] is True
+    assert "changed_files" not in applied
+    assert "proposed_updates" not in applied
+    assert base.read_turn_runtime(sid)["pending_turn"] is None
+    current = base.read_json("state/current_state.json", sid, {})
+    assert current["last_player_input"] == "Спускаюсь вниз и молча смотрю на незнакомцев."
+    assert current["state_revision"] == 1
+    assert current["start_scene_completed"] is True
+    assert base.read_json("state/story_lines.json", sid, {})["turn_counter"] == 1
+    history = base.read_json("state/scene_history.json", sid, [])
+    entries = history.get("entries", []) if isinstance(history, dict) else history
+    assert len(entries) == 1
+    assert entries[0]["turn_id"] == turn_id
+
+    replay = client.post(f"/api/v1/sessions/{sid}/apply-turn-result", json=apply_body).json()
+    assert replay["status"] == "applied"
+    assert replay["idempotent_replay"] is True
+    assert base.read_json("state/story_lines.json", sid, {})["turn_counter"] == 1
+    history = base.read_json("state/scene_history.json", sid, [])
+    entries = history.get("entries", []) if isinstance(history, dict) else history
+    assert len(entries) == 1
+
+    rewritten = dict(apply_body)
+    rewritten["visible_scene_text"] = "Другой текст для уже применённого хода."
+    rejected = client.post(f"/api/v1/sessions/{sid}/apply-turn-result", json=rewritten).json()
+    assert rejected["status"] == "rejected"
+
+
+def test_interrupted_multi_file_apply_rolls_forward_once(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sid = "recovery-proof"
+    client.post("/api/v1/start", json={"session_id": sid})
+    turn_id = client.post(
+        f"/api/v1/sessions/{sid}/turn",
+        json={"player_input": "Я касаюсь перил и прислушиваюсь."},
+    ).json()["turn_id"]
+    apply_body = {
+        "turn_id": turn_id,
+        "visible_scene_text": "Дерево под ладонью было холодным. Внизу кто-то резко вдохнул.",
+        "proposed_updates": {
+            "character_memory_updates": [{"character_id": "akira", "memory": ["Услышала резкий вдох внизу."]}],
+        },
+    }
+
+    original_writer = base._atomic_write_json_target
+    failed = {"once": False}
+
+    def flaky_writer(target: Path, data: object) -> None:
+        if target.name == "scene_history.json" and not failed["once"]:
+            failed["once"] = True
+            raise OSError("simulated crash during transaction")
+        original_writer(target, data)
+
+    monkeypatch.setattr(base, "_atomic_write_json_target", flaky_writer)
+    with pytest.raises(OSError, match="simulated crash"):
+        client.post(f"/api/v1/sessions/{sid}/apply-turn-result", json=apply_body)
+
+    monkeypatch.setattr(base, "_atomic_write_json_target", original_writer)
+    recovered_transactions = base.recover_json_transactions(sid)
+    assert recovered_transactions
+
+    replay = client.post(f"/api/v1/sessions/{sid}/apply-turn-result", json=apply_body).json()
+    assert replay["status"] == "applied"
+    assert replay["idempotent_replay"] is True
+    assert base.read_turn_runtime(sid)["state_revision"] == 1
+    assert base.read_json("state/story_lines.json", sid, {})["turn_counter"] == 1
+    history = base.read_json("state/scene_history.json", sid, [])
+    entries = history.get("entries", []) if isinstance(history, dict) else history
+    assert [entry["turn_id"] for entry in entries] == [turn_id]
+
+
+def test_thirty_transactional_turns_keep_one_revision_per_scene(client: TestClient) -> None:
+    sid = "thirty-turn-proof"
+    client.post("/api/v1/start", json={"session_id": sid})
+    turn_ids: list[str] = []
+
+    for number in range(1, 31):
+        turn = client.post(
+            f"/api/v1/sessions/{sid}/turn",
+            json={"player_input": f"Тестовое действие {number}."},
+        ).json()
+        turn_id = turn["turn_id"]
+        turn_ids.append(turn_id)
+        body = {
+            "turn_id": turn_id,
+            "visible_scene_text": f"Тестовая сцена {number}.",
+            "current_state_patch": {"current_scene_id": f"scene_{number}"},
+        }
+        applied = client.post(f"/api/v1/sessions/{sid}/apply-turn-result", json=body).json()
+        assert applied["state_revision"] == number
+        if number % 7 == 0:
+            replay = client.post(f"/api/v1/sessions/{sid}/apply-turn-result", json=body).json()
+            assert replay["idempotent_replay"] is True
+
+    runtime = base.read_turn_runtime(sid)
+    story_lines = base.read_json("state/story_lines.json", sid, {})
+    history = base.read_json("state/scene_history.json", sid, [])
+    entries = history.get("entries", []) if isinstance(history, dict) else history
+    assert runtime["state_revision"] == 30
+    assert runtime["next_turn_number"] == 31
+    assert runtime["pending_turn"] is None
+    assert story_lines["turn_counter"] == 30
+    assert [entry["turn_id"] for entry in entries] == turn_ids

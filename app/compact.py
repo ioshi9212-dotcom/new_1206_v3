@@ -8,14 +8,17 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import tempfile
+from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
+from threading import RLock
 from typing import Any
 
 from fastapi import FastAPI
 
 APP_NAME = "akira-1206-v3"
-APP_VERSION = "0.3.192-v3-runtime-consistency-fix"
+APP_VERSION = "0.4.0-v3-transactional-turns"
 BASE_URL = os.getenv("PUBLIC_BASE_URL") or os.getenv("RAILWAY_PUBLIC_DOMAIN") or "http://localhost:8000"
 if BASE_URL and not BASE_URL.startswith(("http://", "https://")):
     BASE_URL = "https://" + BASE_URL
@@ -23,6 +26,11 @@ if BASE_URL and not BASE_URL.startswith(("http://", "https://")):
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DATA_DIR = Path(os.getenv("DATA_DIR", str(REPO_ROOT / ".data"))).resolve()
 SESSIONS_DIR = DATA_DIR / "sessions"
+TURN_RUNTIME_FILE = "state/turn_runtime.json"
+TRANSACTIONS_DIR = "state/transactions"
+
+_SESSION_LOCKS: dict[str, RLock] = {}
+_SESSION_LOCKS_GUARD = RLock()
 
 SYNC_FROM_REPO: list[str] = ["api_contracts", "calendar", "canon_lore", "characters", "gpt", "state", "scenes", "schedule", "npcs"]
 
@@ -63,6 +71,19 @@ def _session_path(path: str | Path, session_id: str | None) -> Path:
     return (_session_root(session_id) / str(path).lstrip("/")).resolve()
 
 
+def _session_lock(session_id: str | None) -> RLock:
+    sid = safe_session_id(session_id)
+    with _SESSION_LOCKS_GUARD:
+        return _SESSION_LOCKS.setdefault(sid, RLock())
+
+
+@contextmanager
+def session_guard(session_id: str | None):
+    """Serialize multi-file session operations inside this runtime process."""
+    with _session_lock(session_id):
+        yield
+
+
 def seed() -> None:
     """Create DATA_DIR and copy stable repo content into DATA once if absent.
 
@@ -96,6 +117,7 @@ def ensure_session(session_id: str | None) -> str:
             "updated_at": datetime.utcnow().isoformat(),
             "runtime": APP_VERSION,
         }, session_id=sid)
+    recover_json_transactions(sid)
     return sid
 
 
@@ -119,8 +141,7 @@ def read_text(path: str, session_id: str | None = None, default: str = "") -> st
 
 def write_text(path: str, data: str, session_id: str | None = None) -> None:
     target = _session_path(path, session_id) if session_id else (DATA_DIR / str(path).lstrip("/"))
-    target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(str(data), encoding="utf-8")
+    _atomic_write_text_target(target, str(data))
 
 
 def read_json(path: str, session_id: str | None = None, default: Any = None) -> Any:
@@ -133,10 +154,177 @@ def read_json(path: str, session_id: str | None = None, default: Any = None) -> 
         return default
 
 
+def read_session_json(path: str, session_id: str, default: Any = None) -> Any:
+    """Read only a session-owned file, without falling back to repo templates."""
+    target = _session_path(path, safe_session_id(session_id))
+    try:
+        if not target.is_file():
+            return default
+        return json.loads(target.read_text(encoding="utf-8"))
+    except Exception:
+        return default
+
+
 def write_json(path: str, data: Any, session_id: str | None = None) -> None:
     target = _session_path(path, session_id) if session_id else (DATA_DIR / str(path).lstrip("/"))
+    _atomic_write_json_target(target, data)
+
+
+def _atomic_write_text_target(target: Path, data: str) -> None:
+    """Replace one file atomically so readers never see half-written JSON/text."""
     target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    fd, temp_name = tempfile.mkstemp(prefix=f".{target.name}.", suffix=".tmp", dir=str(target.parent))
+    temp_path = Path(temp_name)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(data)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temp_path, target)
+        try:
+            dir_fd = os.open(target.parent, os.O_RDONLY)
+            try:
+                os.fsync(dir_fd)
+            finally:
+                os.close(dir_fd)
+        except OSError:
+            # Directory fsync is not available on every local/test filesystem.
+            pass
+    finally:
+        if temp_path.exists():
+            temp_path.unlink()
+
+
+def _atomic_write_json_target(target: Path, data: Any) -> None:
+    _atomic_write_text_target(target, json.dumps(data, ensure_ascii=False, indent=2))
+
+
+def _safe_session_target(session_id: str, relative_path: str | Path) -> Path:
+    raw = str(relative_path).lstrip("/")
+    if not raw or ".." in Path(raw).parts:
+        raise ValueError(f"Unsafe session path: {relative_path!r}")
+    root = _session_root(session_id).resolve()
+    target = (root / raw).resolve()
+    try:
+        target.relative_to(root)
+    except ValueError as exc:
+        raise ValueError(f"Session path escapes root: {relative_path!r}") from exc
+    return target
+
+
+def commit_json_transaction(session_id: str, transaction_id: str, writes: dict[str, Any]) -> None:
+    """Durably roll a set of JSON files forward as one recoverable transaction.
+
+    A prepared journal is written before any target. If the process dies between
+    file replacements, ``ensure_session`` replays the complete target set before
+    the next request is served.
+    """
+    sid = safe_session_id(session_id)
+    safe_tid = safe_session_id(transaction_id)
+    if not writes:
+        return
+    with session_guard(sid):
+        root = _session_root(sid)
+        root.mkdir(parents=True, exist_ok=True)
+        ordered = [
+            {"path": str(path).lstrip("/"), "data": data}
+            for path, data in sorted(writes.items(), key=lambda item: item[0])
+        ]
+        for item in ordered:
+            _safe_session_target(sid, item["path"])
+        journal_path = _safe_session_target(sid, f"{TRANSACTIONS_DIR}/{safe_tid}.json")
+        journal = {
+            "schema": "json_transaction_v1",
+            "transaction_id": safe_tid,
+            "status": "prepared",
+            "prepared_at": datetime.utcnow().isoformat(),
+            "writes": ordered,
+        }
+        _atomic_write_json_target(journal_path, journal)
+        for item in ordered:
+            _atomic_write_json_target(_safe_session_target(sid, item["path"]), item["data"])
+        journal["status"] = "committed"
+        journal["committed_at"] = datetime.utcnow().isoformat()
+        _atomic_write_json_target(journal_path, journal)
+        try:
+            journal_path.unlink()
+        except FileNotFoundError:
+            pass
+
+
+def recover_json_transactions(session_id: str) -> list[str]:
+    """Finish prepared multi-file writes left behind by an interrupted request."""
+    sid = safe_session_id(session_id)
+    recovered: list[str] = []
+    with session_guard(sid):
+        journal_dir = _safe_session_target(sid, TRANSACTIONS_DIR)
+        if not journal_dir.is_dir():
+            return recovered
+        for journal_path in sorted(journal_dir.glob("*.json")):
+            try:
+                journal = json.loads(journal_path.read_text(encoding="utf-8"))
+            except Exception:
+                continue
+            status = str(journal.get("status") or "") if isinstance(journal, dict) else ""
+            writes = journal.get("writes") if isinstance(journal, dict) else None
+            if status == "committed":
+                journal_path.unlink(missing_ok=True)
+                continue
+            if status != "prepared" or not isinstance(writes, list):
+                continue
+            for item in writes:
+                if not isinstance(item, dict) or "path" not in item:
+                    raise ValueError(f"Invalid transaction journal: {journal_path}")
+                _atomic_write_json_target(_safe_session_target(sid, item["path"]), item.get("data"))
+            journal["status"] = "committed"
+            journal["recovered_at"] = datetime.utcnow().isoformat()
+            _atomic_write_json_target(journal_path, journal)
+            recovered.append(str(journal.get("transaction_id") or journal_path.stem))
+            journal_path.unlink(missing_ok=True)
+    return recovered
+
+
+def default_turn_runtime() -> dict[str, Any]:
+    return {
+        "schema": "turn_runtime_v1",
+        "state_revision": 0,
+        "next_turn_number": 1,
+        "pending_turn": None,
+        "last_applied_turn": None,
+        "updated_at": datetime.utcnow().isoformat(),
+    }
+
+
+def read_turn_runtime(session_id: str) -> dict[str, Any]:
+    runtime = read_session_json(TURN_RUNTIME_FILE, safe_session_id(session_id), default={})
+    if not isinstance(runtime, dict) or runtime.get("schema") != "turn_runtime_v1":
+        runtime = default_turn_runtime()
+    runtime.setdefault("state_revision", 0)
+    runtime.setdefault("next_turn_number", 1)
+    runtime.setdefault("pending_turn", None)
+    runtime.setdefault("last_applied_turn", None)
+    return runtime
+
+
+def get_pending_turn(session_id: str) -> dict[str, Any] | None:
+    pending = read_turn_runtime(session_id).get("pending_turn")
+    return pending if isinstance(pending, dict) and pending.get("turn_id") else None
+
+
+def effective_current_state(session_id: str) -> dict[str, Any]:
+    """Return committed state overlaid with the one protected pending input."""
+    sid = safe_session_id(session_id)
+    current = read_session_json("state/current_state.json", sid, default={})
+    if not isinstance(current, dict):
+        current = {}
+    effective = dict(current)
+    pending = get_pending_turn(sid)
+    if pending:
+        patch = pending.get("current_state_patch")
+        if isinstance(patch, dict):
+            effective.update(patch)
+        effective["last_player_input"] = str(pending.get("player_input") or "")
+    return effective
 
 
 def append_scene_history(session_id: str, entry: dict[str, Any]) -> None:
@@ -265,7 +453,7 @@ def initialize_start_session(
     *,
     reset_dynamic_state: bool = False,
 ) -> dict[str, Any]:
-    """Write canonical start current_state/calendar into the per-session volume."""
+    """Write a fresh canonical start snapshot and clear the turn transaction."""
     sid = safe_session_id(session_id)
     if reset_dynamic_state:
         # A fresh start must not retain scene history, character memory,
@@ -274,15 +462,19 @@ def initialize_start_session(
     sid = ensure_session(session_id)
     current = default_current_state(sid, overrides)
     current["updated_at"] = datetime.utcnow().isoformat()
-    write_json("state/current_state.json", current, session_id=sid)
-    write_json("state/calendar_runtime.json", start_calendar_runtime(), session_id=sid)
+    current["state_revision"] = 0
+    writes: dict[str, Any] = {
+        "state/current_state.json": current,
+        "state/calendar_runtime.json": start_calendar_runtime(),
+        TURN_RUNTIME_FILE: default_turn_runtime(),
+    }
     if reset_dynamic_state:
-        write_json("state/scene_history.json", [], session_id=sid)
+        writes["state/scene_history.json"] = []
     else:
         existing_history = read_json("state/scene_history.json", session_id=sid, default=None)
         if not isinstance(existing_history, list):
-            write_json("state/scene_history.json", [], session_id=sid)
-    write_json("state/story_lines.json", {
+            writes["state/scene_history.json"] = []
+    writes["state/story_lines.json"] = {
         "schema": "story_lines_runtime_v3",
         "turn_counter": 0,
         "last_state_recovery_audit_turn": 0,
@@ -292,5 +484,6 @@ def initialize_start_session(
             "compaction_cleanup_every": 15,
             "compaction_cleanup_offset": 12
         }
-    }, session_id=sid)
+    }
+    commit_json_transaction(sid, f"start_{new_session_id('snapshot')}", writes)
     return current

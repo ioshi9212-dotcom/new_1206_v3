@@ -1,9 +1,11 @@
-"""V3 apply-turn-result override for character_memory and relationship_pairs.
+"""Transactional v3 apply writer for all dynamic session state.
 
-This writer routes dynamic updates only into v3 session state files: state/character_memory and state/relationship_pairs.
+One protected ``turn_id`` is validated, planned in memory, journaled, and then
+committed across current state, history, memory, relationships and maintenance.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 from datetime import datetime
 from typing import Any
@@ -83,14 +85,6 @@ def _read_json(path: str, sid: str, default: Any) -> Any:
         return default
 
 
-def _write_json(path: str, data: Any, sid: str, dry_run: bool) -> bool:
-    if not dry_run:
-        base.write_json(path, data, session_id=sid)
-    return True
-
-
-
-
 def _story_lines_state(sid: str) -> dict[str, Any]:
     state = _read_json(STORY_LINES_FILE, sid, {})
     if not isinstance(state, dict) or not state:
@@ -108,10 +102,13 @@ def _story_lines_state(sid: str) -> dict[str, Any]:
     return state
 
 
-def _increment_turn_counter(sid: str, dry_run: bool, should_count: bool) -> dict[str, Any]:
-    state = _story_lines_state(sid)
-    if should_count:
-        state["turn_counter"] = int(state.get("turn_counter") or 0) + 1
+def _plan_turn_counter(sid: str, writes: dict[str, Any]) -> dict[str, Any]:
+    state = writes.get(STORY_LINES_FILE)
+    if not isinstance(state, dict):
+        state = _story_lines_state(sid)
+    else:
+        state = dict(state)
+    state["turn_counter"] = int(state.get("turn_counter") or 0) + 1
     turn = int(state.get("turn_counter") or 0)
     audit_due = bool(turn and turn % 10 == 0 and state.get("last_state_recovery_audit_turn") != turn)
     cleanup_due = bool(turn and turn % 15 == 12 and state.get("last_compaction_cleanup_turn") != turn)
@@ -125,8 +122,7 @@ def _increment_turn_counter(sid: str, dry_run: bool, should_count: bool) -> dict
         "state_compaction_cleanup_rule": "turn_counter % 15 == 12",
         "instruction": "If a due flag is true, the next context_slice/preflight will include deeper recent history. Write missed facts only through applyTurnResult; compact noise only, never hidden lore.",
     }
-    if not dry_run:
-        _write_json(STORY_LINES_FILE, state, sid, False)
+    writes[STORY_LINES_FILE] = state
     return {
         "turn_counter": turn,
         **state.get("maintenance_due", {}),
@@ -192,11 +188,56 @@ def _payload(body: dict[str, Any] | None) -> dict[str, Any]:
     data = body.get("data")
     if isinstance(data, dict):
         merged = dict(data)
-        for key in ["visible_scene_text", "scene_text", "final_scene_text", "render_packet", "dry_run"]:
+        for key in ["turn_id", "visible_scene_text", "scene_text", "final_scene_text", "render_packet", "scene_response", "metadata", "dry_run"]:
             if key in body and key not in merged:
                 merged[key] = body[key]
         return merged
     return body
+
+
+def _turn_id(body: dict[str, Any], payload: dict[str, Any]) -> str:
+    candidates: list[Any] = [body.get("turn_id"), payload.get("turn_id")]
+    for container in (body, payload):
+        for key in ("scene_response", "metadata"):
+            nested = container.get(key)
+            if isinstance(nested, dict):
+                candidates.append(nested.get("turn_id"))
+                metadata = nested.get("metadata")
+                if isinstance(metadata, dict):
+                    candidates.append(metadata.get("turn_id"))
+    for value in candidates:
+        text = str(value or "").strip()
+        if text:
+            return text
+    return ""
+
+
+def _apply_digest(turn_id: str, payload: dict[str, Any], scene_text: str) -> str:
+    logical = dict(payload)
+    logical.pop("dry_run", None)
+    logical["turn_id"] = turn_id
+    logical["visible_scene_text"] = scene_text
+    logical.pop("final_scene_text", None)
+    logical.pop("scene_text", None)
+    return hashlib.sha256(
+        json.dumps(logical, ensure_ascii=False, sort_keys=True, separators=(",", ":"), default=str).encode("utf-8")
+    ).hexdigest()
+
+
+def _rejected(sid: str, error: str, *, turn_id: str = "", expected_turn_id: str = "", next_action: str = "getPreflight") -> dict[str, Any]:
+    runtime = base.read_turn_runtime(sid)
+    return {
+        "success": False,
+        "status": "rejected",
+        "session_id": sid,
+        "runtime_version": RUNTIME_VERSION,
+        "turn_id": turn_id or None,
+        "expected_turn_id": expected_turn_id or None,
+        "state_revision": int(runtime.get("state_revision") or 0),
+        "error": error,
+        "next_action": next_action,
+        "visible_scene_output_allowed": False,
+    }
 
 
 def _scene_text(body: dict[str, Any], payload: dict[str, Any]) -> str:
@@ -224,28 +265,28 @@ def _section_items(section: Any) -> list[dict[str, Any]]:
     return []
 
 
-def _apply_json_patch_file(sid: str, path: str, section: Any, dry_run: bool) -> bool:
+def _plan_json_patch_file(sid: str, path: str, section: Any, writes: dict[str, Any]) -> bool:
     if not isinstance(section, dict) or not section:
         return False
-    old = _read_json(path, sid, {})
+    old = writes.get(path, _read_json(path, sid, {}))
     if not isinstance(old, dict):
         old = {}
     new = _deep_merge(old, section)
     if json.dumps(old, ensure_ascii=False, sort_keys=True) == json.dumps(new, ensure_ascii=False, sort_keys=True):
         return False
-    _write_json(path, new, sid, dry_run)
+    writes[path] = new
     return True
 
 
-def _apply_character_memory(sid: str, payload: dict[str, Any], dry_run: bool) -> list[str]:
-    section = _find(payload, "character_memory_changes", "character_memory_patch", "memory_changes", "knowledge_changes", "knowledge_state_changes")
+def _plan_character_memory(sid: str, payload: dict[str, Any], writes: dict[str, Any]) -> list[str]:
+    section = _find(payload, "character_memory_updates", "character_memory_changes", "character_memory_patch", "memory_changes", "knowledge_changes", "knowledge_state_changes")
     changed: list[str] = []
     for item in _section_items(section):
         cid = _cid(item.get("character_id") or item.get("id") or item.get("персонаж") or item.get("имя"))
         if not cid:
             continue
         path = f"state/character_memory/{cid}.json"
-        state = _read_json(path, sid, {})
+        state = writes.get(path, _read_json(path, sid, {}))
         if not isinstance(state, dict):
             state = {"character_id": cid}
         patch = item.get("patch") if isinstance(item.get("patch"), dict) else {}
@@ -269,20 +310,20 @@ def _apply_character_memory(sid: str, payload: dict[str, Any], dry_run: bool) ->
         new.setdefault("character_id", cid)
         new["last_updated_at"] = datetime.utcnow().isoformat()
         if json.dumps(state, ensure_ascii=False, sort_keys=True) != json.dumps(new, ensure_ascii=False, sort_keys=True):
-            _write_json(path, new, sid, dry_run)
+            writes[path] = new
             changed.append(path)
     return sorted(set(changed))
 
 
-def _apply_relationship_pairs(sid: str, payload: dict[str, Any], dry_run: bool) -> list[str]:
-    section = _find(payload, "relationship_pair_changes", "relationship_changes", "relationships_changes", "relationship_deltas", "relationships")
+def _plan_relationship_pairs(sid: str, payload: dict[str, Any], writes: dict[str, Any]) -> list[str]:
+    section = _find(payload, "relationship_pair_updates", "relationship_updates", "relationship_pair_changes", "relationship_changes", "relationships_changes", "relationship_deltas", "relationships")
     changed: list[str] = []
     for item in _section_items(section):
         pair = _pair_id(item.get("pair_id") or item.get("pair") or item.get("id"))
         if not pair:
             continue
         path = f"state/relationship_pairs/{pair}.json"
-        state = _read_json(path, sid, {})
+        state = writes.get(path, _read_json(path, sid, {}))
         if not isinstance(state, dict):
             state = {"pair_id": pair}
         patch = item.get("patch") if isinstance(item.get("patch"), dict) else {}
@@ -304,31 +345,43 @@ def _apply_relationship_pairs(sid: str, payload: dict[str, Any], dry_run: bool) 
         new.setdefault("pair_id", pair)
         new["last_updated_at"] = datetime.utcnow().isoformat()
         if json.dumps(state, ensure_ascii=False, sort_keys=True) != json.dumps(new, ensure_ascii=False, sort_keys=True):
-            _write_json(path, new, sid, dry_run)
+            writes[path] = new
             changed.append(path)
     return sorted(set(changed))
 
 
-def _append_scene_history(sid: str, payload: dict[str, Any], scene_text: str, changed: list[str], dry_run: bool) -> bool:
-    if dry_run or not scene_text:
+def _plan_scene_history(
+    sid: str,
+    turn_id: str,
+    player_input: str,
+    scene_text: str,
+    current: dict[str, Any],
+    changed: list[str],
+    state_revision: int,
+    writes: dict[str, Any],
+) -> bool:
+    if not scene_text:
         return False
-    current = _read_json(CURRENT_STATE_FILE, sid, {})
-    history = _read_json(SCENE_HISTORY_FILE, sid, {"schema": "scene_history_v3", "entries": []})
+    history = writes.get(SCENE_HISTORY_FILE, _read_json(SCENE_HISTORY_FILE, sid, {"schema": "scene_history_v3", "entries": []}))
     if isinstance(history, list):
-        root: Any = history
-        entries = history
+        root: Any = list(history)
+        entries = root
     else:
         if not isinstance(history, dict):
             history = {"schema": "scene_history_v3", "entries": []}
-        root = history
+        root = dict(history)
         entries = history.setdefault("entries", [])
         if not isinstance(entries, list):
             entries = []
-            history["entries"] = entries
-    if entries and isinstance(entries[-1], dict) and entries[-1].get("visible_scene_text") == scene_text:
+        else:
+            entries = list(entries)
+        root["entries"] = entries
+    if any(isinstance(entry, dict) and entry.get("turn_id") == turn_id for entry in entries):
         return False
     entry = {
-        "id": f"scene_{datetime.utcnow().strftime('%Y%m%d%H%M%S')}",
+        "id": f"scene_{turn_id}",
+        "turn_id": turn_id,
+        "state_revision": state_revision,
         "kind": "gameplay",
         "created_at": datetime.utcnow().isoformat(),
         "current_date": current.get("current_date") if isinstance(current, dict) else None,
@@ -336,7 +389,7 @@ def _append_scene_history(sid: str, payload: dict[str, Any], scene_text: str, ch
         "location_id": current.get("current_location_id") if isinstance(current, dict) else None,
         "location_text": current.get("current_location_text") if isinstance(current, dict) else None,
         "active_characters": current.get("active_character_ids") or current.get("active_characters", []) if isinstance(current, dict) else [],
-        "player_input": payload.get("player_input") or (current.get("last_player_input") if isinstance(current, dict) else ""),
+        "player_input": player_input,
         "visible_scene_text": scene_text,
         "changed_files_snapshot": list(changed),
     }
@@ -345,7 +398,7 @@ def _append_scene_history(sid: str, payload: dict[str, Any], scene_text: str, ch
         root["schema"] = root.get("schema") or "scene_history_v3"
         root["total_entries"] = len(entries)
         root["last_updated_at"] = datetime.utcnow().isoformat()
-    _write_json(SCENE_HISTORY_FILE, root, sid, dry_run)
+    writes[SCENE_HISTORY_FILE] = root
     return True
 
 
@@ -359,57 +412,182 @@ def apply_turn_result_v3(session_id: str, body: dict[str, Any] | None = Body(def
     body = body if isinstance(body, dict) else {}
     payload = _payload(body)
     dry_run = bool(body.get("dry_run") or payload.get("dry_run"))
-    changed: list[str] = []
-
-    # Safe whole-file JSON merges for non-character dynamic state only.
-    json_sections = [
-        (CURRENT_STATE_FILE, ["current_state_patch", "current_state_changes", "current_state", "state_changes"]),
-        (SCENE_CONTINUITY_FILE, ["scene_continuity_patch", "scene_continuity_changes", "scene_continuity_state"]),
-        (CALENDAR_RUNTIME_FILE, ["calendar_runtime_patch", "calendar_runtime_changes", "calendar_runtime", "calendar_changes"]),
-        (PHYSICAL_CONTINUITY_FILE, ["physical_continuity_patch", "physical_continuity_changes", "physical_continuity_state"]),
-    ]
-    for path, names in json_sections:
-        section = _find(payload, *names)
-        if _apply_json_patch_file(sid, path, section, dry_run):
-            changed.append(path)
-
-    changed.extend(_apply_character_memory(sid, payload, dry_run))
-    changed.extend(_apply_relationship_pairs(sid, payload, dry_run))
-    changed = list(dict.fromkeys(changed))
+    turn_id = _turn_id(body, payload)
+    if not turn_id:
+        pending = base.get_pending_turn(sid)
+        return _rejected(
+            sid,
+            "turn_id is required. Use processTurn.turn_id; scene_response.turn_id or metadata.turn_id are fallback locations only.",
+            expected_turn_id=str(pending.get("turn_id") or "") if pending else "",
+            next_action="applyTurnResult" if pending else "waitForPlayerInput",
+        )
 
     text = _scene_text(body, payload)
-    history_appended = _append_scene_history(sid, payload, text, changed, dry_run)
-    if history_appended:
-        changed.append(SCENE_HISTORY_FILE)
+    digest = _apply_digest(turn_id, payload, text)
 
-    maintenance = _increment_turn_counter(sid, dry_run, bool(text or changed))
-    if not dry_run and bool(text or changed):
+    with base.session_guard(sid):
+        runtime = base.read_turn_runtime(sid)
+        last_applied = runtime.get("last_applied_turn")
+        if isinstance(last_applied, dict) and last_applied.get("turn_id") == turn_id:
+            if last_applied.get("payload_sha256") != digest:
+                return _rejected(
+                    sid,
+                    "This turn_id was already applied with a different result payload; history cannot be rewritten by retry.",
+                    turn_id=turn_id,
+                    next_action="waitForPlayerInput",
+                )
+            stored = last_applied.get("result")
+            if isinstance(stored, dict):
+                replay = dict(stored)
+                replay["idempotent_replay"] = True
+                replay["recovered_or_replayed"] = True
+                return replay
+
+        pending = runtime.get("pending_turn")
+        if not isinstance(pending, dict) or not pending.get("turn_id"):
+            return _rejected(
+                sid,
+                "No pending turn exists. The result is stale, already applied, or the session was reset.",
+                turn_id=turn_id,
+                next_action="waitForPlayerInput",
+            )
+        expected_turn_id = str(pending.get("turn_id") or "")
+        if turn_id != expected_turn_id:
+            return _rejected(
+                sid,
+                "turn_id does not match the protected pending turn. No state was changed.",
+                turn_id=turn_id,
+                expected_turn_id=expected_turn_id,
+                next_action="applyTurnResult",
+            )
+        current_revision = int(runtime.get("state_revision") or 0)
+        if int(pending.get("base_revision") or 0) != current_revision:
+            return _rejected(
+                sid,
+                "Pending turn base_revision is stale. Run preflight/recovery before generating anything else.",
+                turn_id=turn_id,
+                expected_turn_id=expected_turn_id,
+                next_action="getPreflight",
+            )
+        if not text:
+            return _rejected(
+                sid,
+                "visible_scene_text is empty. A gameplay turn cannot commit without the final player-visible scene.",
+                turn_id=turn_id,
+                expected_turn_id=expected_turn_id,
+                next_action="applyTurnResult",
+            )
+
+        new_revision = current_revision + 1
+        writes: dict[str, Any] = {}
+        changed: list[str] = []
+
+        # Commit the protected player input and its overrides together with the
+        # generated result; processTurn never mutates canonical current_state.
+        current = base.effective_current_state(sid)
+        current_section = _find(payload, "current_state_patch", "current_state_changes", "current_state", "state_changes")
+        if isinstance(current_section, dict) and current_section:
+            current = _deep_merge(current, current_section)
+        current["session_id"] = sid
+        current["last_player_input"] = str(pending.get("player_input") or "")
+        current["state_revision"] = new_revision
+        current["last_applied_turn_id"] = turn_id
+        current["updated_at"] = datetime.utcnow().isoformat()
+        writes[CURRENT_STATE_FILE] = current
+        changed.append(CURRENT_STATE_FILE)
+
+        # Safe whole-file merges for the remaining non-character dynamic state.
+        json_sections = [
+            (SCENE_CONTINUITY_FILE, ["scene_continuity_patch", "scene_continuity_changes", "scene_continuity_state"]),
+            (CALENDAR_RUNTIME_FILE, ["calendar_runtime_patch", "calendar_runtime_changes", "calendar_runtime", "calendar_changes"]),
+            (PHYSICAL_CONTINUITY_FILE, ["physical_continuity_patch", "physical_continuity_changes", "physical_continuity_state"]),
+        ]
+        for path, names in json_sections:
+            if _plan_json_patch_file(sid, path, _find(payload, *names), writes):
+                changed.append(path)
+
+        changed.extend(_plan_character_memory(sid, payload, writes))
+        changed.extend(_plan_relationship_pairs(sid, payload, writes))
+        changed = list(dict.fromkeys(changed))
+
+        if _plan_scene_history(
+            sid,
+            turn_id,
+            str(pending.get("player_input") or ""),
+            text,
+            current,
+            changed,
+            new_revision,
+            writes,
+        ):
+            changed.append(SCENE_HISTORY_FILE)
+
+        maintenance = _plan_turn_counter(sid, writes)
         changed.append(STORY_LINES_FILE)
+        changed.extend([base.TURN_RUNTIME_FILE, LAST_APPLY_RESULT_FILE])
+        changed = list(dict.fromkeys(changed))
 
-    status = "applied" if changed else "no_changes_detected"
-    result = {
-        "status": status,
-        "session_id": sid,
-        "runtime_version": RUNTIME_VERSION,
-        "dry_run": dry_run,
-        "changed_files": list(dict.fromkeys(changed)),
-        "maintenance": maintenance,
-        "visible_scene_text": text,
-        "final_scene_text": text,
-        "blocked_paths": ["characters/<id>/*.yaml", "legacy monolithic dynamic memory files"],
-        "notes": [
-            "Dynamic character updates are written to state/character_memory/<id>.json.",
-            "Relationship updates are written to state/relationship_pairs/<pair>.json.",
-            "Static character cards are never modified by applyTurnResult.",
-            "Turn counter is stored in state/story_lines.json; recovery audit is due every 10 turns and compaction cleanup every 15 turns with offset 12.",
-        ],
-    }
-    if not dry_run:
-        _write_json(LAST_APPLY_RESULT_FILE, result, sid, False)
-        if LAST_APPLY_RESULT_FILE not in changed:
-            changed.append(LAST_APPLY_RESULT_FILE)
-            result["changed_files"] = list(dict.fromkeys(changed))
-    return result
+        if dry_run:
+            return {
+                "success": True,
+                "status": "validated_dry_run",
+                "session_id": sid,
+                "runtime_version": RUNTIME_VERSION,
+                "turn_id": turn_id,
+                "base_revision": current_revision,
+                "would_be_state_revision": new_revision,
+                "dry_run": True,
+                "would_change_files": changed,
+                "maintenance_preview": maintenance,
+                "visible_scene_output_allowed": False,
+                "next_action": "applyTurnResult",
+            }
+
+        applied_at = datetime.utcnow().isoformat()
+        result = {
+            "success": True,
+            "status": "applied",
+            "session_id": sid,
+            "runtime_version": RUNTIME_VERSION,
+            "turn_id": turn_id,
+            "turn_number": pending.get("turn_number"),
+            "base_revision": current_revision,
+            "state_revision": new_revision,
+            "dry_run": False,
+            "visible_scene_text": text,
+            "final_scene_text": text,
+            "visible_scene_output_allowed": True,
+            "display_instruction": "State is committed. Show visible_scene_text now; do not expose proposed_updates or internal JSON.",
+            "next_action": "waitForPlayerInput",
+        }
+        audit_result = {
+            **result,
+            "changed_files": changed,
+            "maintenance": maintenance,
+            "blocked_paths": ["characters/<id>/*.yaml", "legacy monolithic dynamic memory files"],
+            "audit_note": "Internal audit record. Never render this file or its metadata as scene output.",
+        }
+        final_runtime = dict(runtime)
+        final_runtime["state_revision"] = new_revision
+        final_runtime["pending_turn"] = None
+        final_runtime["last_applied_turn"] = {
+            "turn_id": turn_id,
+            "turn_number": pending.get("turn_number"),
+            "base_revision": current_revision,
+            "state_revision": new_revision,
+            "payload_sha256": digest,
+            "applied_at": applied_at,
+            "result": result,
+        }
+        final_runtime["updated_at"] = applied_at
+        writes[base.TURN_RUNTIME_FILE] = final_runtime
+        writes[LAST_APPLY_RESULT_FILE] = audit_result
+
+        # If the process stops after any target replacement, the prepared journal
+        # rolls all files forward on the next request. A retry then returns the
+        # stored result without applying the turn twice.
+        base.commit_json_transaction(sid, f"apply_{turn_id}", writes)
+        return result
 
 
 try:

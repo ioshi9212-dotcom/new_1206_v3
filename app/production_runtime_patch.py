@@ -1,13 +1,16 @@
 """Production entrypoint for Akira 1206 v3 standalone API.
 
-Hybrid action-safe schema:
-- processTurn stores the player input and returns a light ack.
+Transactional action-safe schema:
+- processTurn protects one player input and returns its turn_id.
 - getTurnContract lets Railway decide what this scene needs.
 - getRequiredContextManifest returns the chunk plan.
 - getRequiredContextChunk returns small, ordered context chunks until has_more=false.
+- applyTurnResult atomically commits that same turn_id before text is shown.
 """
 from __future__ import annotations
 
+import hashlib
+import json
 from datetime import datetime
 from typing import Any
 
@@ -91,7 +94,62 @@ def _current_frame_ack(current: dict[str, Any]) -> dict[str, Any]:
         "relationship_pair_ids": current.get("relationship_pair_ids", []),
         "start_scene_exact_text_required": bool(current.get("start_scene_exact_text_required")),
         "start_scene_completed": bool(current.get("start_scene_completed")),
+        "state_revision": int(current.get("state_revision") or 0),
     }
+
+
+def _pending_state_patch(payload: dict[str, Any], current: dict[str, Any], player_input: str) -> dict[str, Any]:
+    patch: dict[str, Any] = {"last_player_input": player_input}
+    for key in [
+        "pov_character_id", "active_character_ids", "scene_character_ids", "present_character_ids",
+        "speaking_character_ids", "addressed_character_ids", "relationship_pair_ids", "scene_goal",
+        "current_scene_id", "current_location_id", "current_location_text", "current_date", "current_day_phase",
+        "past_trigger_character_ids", "load_past", "past_triggered",
+    ]:
+        if key in payload:
+            patch[key] = payload[key]
+    if current.get("start_scene_exact_text_required") and not current.get("start_scene_completed"):
+        # The exact start scene was already shown before this first player reply.
+        # Keep this change pending until the generated reply is successfully applied.
+        patch["start_scene_completed"] = True
+        patch["start_scene_exact_text_required"] = False
+    return patch
+
+
+def _begin_pending_turn(sid: str, player_input: str, state_patch: dict[str, Any]) -> tuple[str, dict[str, Any], dict[str, Any]]:
+    """Create one protected pending turn, or return the existing idempotent one."""
+    with base.session_guard(sid):
+        runtime = base.read_turn_runtime(sid)
+        pending = runtime.get("pending_turn")
+        if isinstance(pending, dict) and pending.get("turn_id"):
+            if str(pending.get("player_input") or "") == player_input:
+                return "reused", pending, runtime
+            return "conflict", pending, runtime
+
+        turn_number = max(1, int(runtime.get("next_turn_number") or 1))
+        created_at = datetime.utcnow().isoformat()
+        fingerprint = hashlib.sha256(
+            json.dumps(
+                {"session_id": sid, "turn_number": turn_number, "player_input": player_input, "created_at": created_at},
+                ensure_ascii=False,
+                sort_keys=True,
+            ).encode("utf-8")
+        ).hexdigest()[:10]
+        pending = {
+            "turn_id": f"turn_{turn_number:06d}_{fingerprint}",
+            "turn_number": turn_number,
+            "status": "pending",
+            "base_revision": int(runtime.get("state_revision") or 0),
+            "player_input": player_input,
+            "player_input_sha256": hashlib.sha256(player_input.encode("utf-8")).hexdigest(),
+            "current_state_patch": state_patch,
+            "created_at": created_at,
+        }
+        runtime["pending_turn"] = pending
+        runtime["next_turn_number"] = turn_number + 1
+        runtime["updated_at"] = created_at
+        base.write_json(base.TURN_RUNTIME_FILE, runtime, session_id=sid)
+        return "created", pending, runtime
 
 
 @app.get("/", include_in_schema=False)
@@ -112,6 +170,8 @@ def health() -> dict[str, Any]:
         "knowledge_boundary": "visible_source_and_name_permission",
         "maintenance_runtime": "turn10_recovery_turn15_cleanup",
         "final_render_contract": "last_required_context_chunk",
+        "turn_protocol": "pending_turn_turn_id_atomic_apply_v1",
+        "state_storage": "atomic_json_with_recoverable_multi_file_journal",
         "large_contract_actions_disabled": True,
     }
 
@@ -122,7 +182,7 @@ def create_session(body: dict[str, Any] | None = Body(default=None)) -> dict[str
     payload = _payload(body)
     raw_sid = payload.get("session_id")
     sid = base.ensure_session(raw_sid or base.new_session_id())
-    current_state = base.read_json("state/current_state.json", session_id=sid, default=None)
+    current_state = base.read_session_json("state/current_state.json", session_id=sid, default=None)
     player_input = _startish_input(payload)
     start_command = base.is_start_command(player_input)
     reset = bool(payload.get("reset"))
@@ -134,15 +194,20 @@ def create_session(body: dict[str, Any] | None = Body(default=None)) -> dict[str
             reset_dynamic_state=bool(reset or start_command),
         )
 
+    runtime = base.read_turn_runtime(sid)
+    pending = runtime.get("pending_turn") if isinstance(runtime.get("pending_turn"), dict) else None
+    effective = base.effective_current_state(sid)
     return {
         "success": True,
         "session_id": sid,
         "created_at": datetime.utcnow().isoformat(),
         "runtime_version": RUNTIME_VERSION,
         "mode": "session_ack_light",
-        "current_frame": _current_frame_ack(current_state),
+        "current_frame": _current_frame_ack(effective or current_state),
+        "state_revision": int(runtime.get("state_revision") or 0),
+        "pending_turn_id": pending.get("turn_id") if pending else None,
         "next_action": "getPreflight",
-        "note": "Session is ready. Do not request full scene_contract; call getPreflight, then getTurnContract -> getRequiredContextManifest -> getRequiredContextChunk until has_more=false.",
+        "note": "Session is ready. getPreflight decides between exact start scene, resuming a pending turn, or waiting for player input.",
     }
 
 
@@ -157,14 +222,15 @@ def start_session(body: dict[str, Any] | None = Body(default=None)) -> dict[str,
 
 @app.post("/api/v1/sessions/{session_id}/turn", operation_id="processTurn")
 def process_turn(session_id: str, body: dict[str, Any] | None = Body(default=None)) -> dict[str, Any]:
-    """Store player input/current-state overrides and return a light ack.
+    """Protect one player input as a pending transaction and return its id.
 
     The GPT should then call getTurnContract, getRequiredContextManifest and all
-    getRequiredContextChunk calls before writing the scene.
+    getRequiredContextChunk calls, draft internally, and apply that same turn_id
+    before showing the scene.
     """
     payload = _payload(body)
     sid = base.ensure_session(session_id)
-    current_state = base.read_json("state/current_state.json", session_id=sid, default={})
+    current_state = base.read_session_json("state/current_state.json", session_id=sid, default={})
     if not isinstance(current_state, dict):
         current_state = {}
     player_input = str(payload.get("player_input") or payload.get("user_input") or payload.get("text") or payload.get("message") or "").strip()
@@ -176,44 +242,75 @@ def process_turn(session_id: str, body: dict[str, Any] | None = Body(default=Non
             _merge_start_overrides(payload, player_input=player_input),
             reset_dynamic_state=True,
         )
-    else:
-        if not player_input:
-            return {
-                "success": False,
-                "session_id": sid,
-                "runtime_version": RUNTIME_VERSION,
-                "mode": "turn_rejected_empty_input",
-                "error": "player_input is empty; do not write a scene from stale start context.",
-                "current_frame": _current_frame_ack(current_state if isinstance(current_state, dict) else {}),
-                "next_action": "waitForPlayerInput",
-            }
-        if not current_state:
-            current_state = base.initialize_start_session(sid, _merge_start_overrides(payload, player_input=player_input))
-        if current_state.get("start_scene_exact_text_required") and not current_state.get("start_scene_completed"):
-            current_state["start_scene_completed"] = True
-            current_state["start_scene_exact_text_required"] = False
-        current_state["last_player_input"] = player_input
-        for key in [
-            "pov_character_id", "active_character_ids", "scene_character_ids", "present_character_ids",
-            "speaking_character_ids", "addressed_character_ids", "relationship_pair_ids", "scene_goal",
-            "current_location_id", "current_location_text", "current_date", "current_day_phase",
-            "past_trigger_character_ids", "load_past", "past_triggered",
-        ]:
-            if key in payload:
-                current_state[key] = payload[key]
-        current_state["updated_at"] = datetime.utcnow().isoformat()
-        base.write_json("state/current_state.json", current_state, session_id=sid)
+        return {
+            "success": True,
+            "session_id": sid,
+            "runtime_version": RUNTIME_VERSION,
+            "mode": "start_reset_ack",
+            "turn_id": None,
+            "state_revision": 0,
+            "start_command_detected": True,
+            "current_frame": _current_frame_ack(current_state),
+            "next_action": "getPreflight",
+            "required_sequence": ["getPreflight", "getStartSceneText", "show exact_text", "waitForPlayerInput"],
+        }
+
+    if not player_input:
+        return {
+            "success": False,
+            "session_id": sid,
+            "runtime_version": RUNTIME_VERSION,
+            "mode": "turn_rejected_empty_input",
+            "error": "player_input is empty; do not write a scene from stale context.",
+            "current_frame": _current_frame_ack(current_state if isinstance(current_state, dict) else {}),
+            "next_action": "waitForPlayerInput",
+        }
+    if not current_state:
+        current_state = base.initialize_start_session(sid, _merge_start_overrides(payload, player_input="начнем"))
+
+    pending_status, pending, runtime = _begin_pending_turn(
+        sid,
+        player_input,
+        _pending_state_patch(payload, current_state, player_input),
+    )
+    effective = base.effective_current_state(sid)
+    if pending_status == "conflict":
+        return {
+            "success": False,
+            "session_id": sid,
+            "runtime_version": RUNTIME_VERSION,
+            "mode": "turn_rejected_pending_turn",
+            "error": "A different player turn is still pending. Resume/apply it or reset the session; it was not overwritten.",
+            "pending_turn_id": pending.get("turn_id"),
+            "pending_player_input": pending.get("player_input"),
+            "state_revision": int(runtime.get("state_revision") or 0),
+            "current_frame": _current_frame_ack(effective),
+            "next_action": "getTurnContract",
+            "required_turn_id": pending.get("turn_id"),
+        }
 
     return {
         "success": True,
         "session_id": sid,
         "runtime_version": RUNTIME_VERSION,
-        "mode": "turn_ack_light",
+        "mode": "turn_ack_transactional",
+        "turn_id": pending.get("turn_id"),
+        "turn_number": pending.get("turn_number"),
+        "state_revision": int(runtime.get("state_revision") or 0),
+        "base_revision": pending.get("base_revision"),
+        "pending_turn_reused": pending_status == "reused",
         "player_input": player_input,
-        "start_command_detected": start_command,
-        "current_frame": _current_frame_ack(current_state),
+        "start_command_detected": False,
+        "current_frame": _current_frame_ack(effective),
         "next_action": "getTurnContract",
-        "required_sequence": ["getTurnContract", "getRequiredContextManifest", "getRequiredContextChunk until has_more=false", "writeScene"],
+        "required_sequence": [
+            "getTurnContract with this turn_id",
+            "getRequiredContextManifest with this turn_id",
+            "getRequiredContextChunk with this turn_id until has_more=false",
+            "draft scene internally",
+            "applyTurnResult with this same turn_id",
+            "show visible_scene_text only after apply status=applied",
+        ],
     }
 
 
@@ -266,29 +363,33 @@ def openapi_actions() -> dict[str, Any]:
         "needs": object_any,
     })
     turn_contract_body_schema = _object_schema({
+        "turn_id": {"type": "string", "description": "Exact turn_id returned by processTurn."},
         "player_input": {"type": "string", "description": "Exact latest player action/reply."},
         "user_input": {"type": "string", "description": "Alias for player_input."},
         "scene_plan": scene_plan_schema,
         "character_requests": object_any,
         "characters": object_any,
         "needs": object_any,
-    })
+    }, required=["turn_id"])
     manifest_body_schema = _object_schema({
+        "turn_id": {"type": "string", "description": "Same protected turn_id."},
         "player_input": {"type": "string"},
         "user_input": {"type": "string"},
         "scene_plan": scene_plan_schema,
         "turn_contract": object_any,
         "needs": object_any,
-    })
+    }, required=["turn_id"])
     chunk_body_schema = _object_schema({
+        "turn_id": {"type": "string", "description": "Same protected turn_id."},
         "chunk_index": {"type": "integer", "description": "Start with 0 and continue until has_more=false."},
         "player_input": {"type": "string"},
         "user_input": {"type": "string"},
         "scene_plan": scene_plan_schema,
         "turn_contract": object_any,
         "needs": object_any,
-    }, required=["chunk_index"])
+    }, required=["turn_id", "chunk_index"])
     context_request_body_schema = _object_schema({
+        "turn_id": {"type": "string"},
         "player_input": {"type": "string", "description": "Legacy. Prefer getTurnContract + manifest/chunks."},
         "user_input": {"type": "string", "description": "Alias for player_input."},
         "scene_plan": scene_plan_schema,
@@ -297,6 +398,7 @@ def openapi_actions() -> dict[str, Any]:
         "needs": object_any,
     })
     context_more_body_schema = _object_schema({
+        "turn_id": {"type": "string"},
         "chunk_index": {"type": "integer"},
         "player_input": {"type": "string"},
         "user_input": {"type": "string"},
@@ -306,6 +408,7 @@ def openapi_actions() -> dict[str, Any]:
         "reason": {"type": "string"},
     })
     apply_body_schema = _object_schema({
+        "turn_id": {"type": "string", "description": "Exact pending turn_id from processTurn. Nested scene_response.turn_id/metadata.turn_id are accepted only as recovery fallbacks."},
         "visible_scene_text": {"type": "string", "description": "Final scene text shown to the user."},
         "final_scene_text": {"type": "string", "description": "Alias/final scene text."},
         "scene_text": {"type": "string", "description": "Alias/final scene text."},
@@ -321,13 +424,13 @@ def openapi_actions() -> dict[str, Any]:
         "relationship_updates": object_any,
         "relationship_pair_updates": object_any,
         "dry_run": {"type": "boolean"},
-    })
+    }, required=["turn_id", "visible_scene_text"])
     return {
         "openapi": "3.1.0",
         "info": {
             "title": "Akira 1206 v3 Actions",
             "version": RUNTIME_VERSION,
-            "description": "Hybrid API: start/processTurn -> getTurnContract -> getRequiredContextManifest -> getRequiredContextChunk loop -> apply_turn_result.",
+            "description": "Transactional API: processTurn creates turn_id; context calls and applyTurnResult must use it; scene text is shown only after a successful atomic apply.",
         },
         "servers": [{"url": base.BASE_URL.rstrip("/")}],
         "paths": {
@@ -341,7 +444,7 @@ def openapi_actions() -> dict[str, Any]:
                 "post": {"operationId": "createSession", "summary": "Create or ensure a session; returns only a light ack.", "requestBody": {"required": False, "content": {"application/json": {"schema": create_session_body_schema}}}, "responses": {"200": _response("Light session ack")}}
             },
             "/api/v1/sessions/{session_id}/turn": {
-                "post": {"operationId": "processTurn", "summary": "Store player input/current-state overrides; then call getTurnContract.", "parameters": [_session_path_param()], "requestBody": {"required": True, "content": {"application/json": {"schema": process_turn_body_schema}}}, "responses": {"200": _response("Light turn ack")}}
+                "post": {"operationId": "processTurn", "summary": "Protect one player input and return its turn_id. Never overwrite a different pending turn.", "parameters": [_session_path_param()], "requestBody": {"required": True, "content": {"application/json": {"schema": process_turn_body_schema}}}, "responses": {"200": _response("Transactional turn ack")}}
             },
             "/api/v3/sessions/{session_id}/preflight": {
                 "get": {"operationId": "getPreflight", "summary": "Get small current frame only; do not write scene from this.", "parameters": [_session_path_param()], "responses": {"200": _response("Preflight slice")}}
@@ -353,7 +456,7 @@ def openapi_actions() -> dict[str, Any]:
                 "post": {"operationId": "getRequiredContextManifest", "summary": "Return ordered context chunks required for this turn. Then call getRequiredContextChunk from 0 until has_more=false.", "parameters": [_session_path_param()], "requestBody": {"required": False, "content": {"application/json": {"schema": manifest_body_schema}}}, "responses": {"200": _response("Required context manifest")}}
             },
             "/api/v3/sessions/{session_id}/required-context/chunk": {
-                "post": {"operationId": "getRequiredContextChunk", "summary": "Load one small context chunk. Start with chunk_index=0 and repeat until has_more=false before writing the scene.", "parameters": [_session_path_param()], "requestBody": {"required": True, "content": {"application/json": {"schema": chunk_body_schema}}}, "responses": {"200": _response("Required context chunk")}}
+                "post": {"operationId": "getRequiredContextChunk", "summary": "Load one chunk for this turn_id. After has_more=false, draft internally and call applyTurnResult before showing text.", "parameters": [_session_path_param()], "requestBody": {"required": True, "content": {"application/json": {"schema": chunk_body_schema}}}, "responses": {"200": _response("Required context chunk")}}
             },
             "/api/v3/sessions/{session_id}/context-request": {
                 "post": {"operationId": "requestContextSlice", "summary": "Legacy compatibility endpoint. Prefer getTurnContract + manifest/chunks.", "parameters": [_session_path_param()], "requestBody": {"required": False, "content": {"application/json": {"schema": context_request_body_schema}}}, "responses": {"200": _response("Context manifest pointer")}}
@@ -365,7 +468,7 @@ def openapi_actions() -> dict[str, Any]:
                 "get": {"operationId": "getStartSceneText", "summary": "Get the exact first-scene text only when preflight/chunk says exact_text_required.", "parameters": [_session_path_param()], "responses": {"200": _response("Exact start scene text")}}
             },
             "/api/v1/sessions/{session_id}/apply-turn-result": {
-                "post": {"operationId": "applyTurnResult", "summary": "Apply proposed_updates after a scene.", "parameters": [_session_path_param()], "requestBody": {"required": False, "content": {"application/json": {"schema": apply_body_schema}}}, "responses": {"200": _response("Apply result")}}
+                "post": {"operationId": "applyTurnResult", "summary": "Atomically apply this exact pending turn_id. Only its successful response authorizes showing visible_scene_text.", "parameters": [_session_path_param()], "requestBody": {"required": True, "content": {"application/json": {"schema": apply_body_schema}}}, "responses": {"200": _response("Atomic apply result")}}
             },
         },
     }
