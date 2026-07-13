@@ -26,37 +26,20 @@ boundary_helper = '''def _player_control_boundary(cid: str, role: str) -> dict[s
     if role == "pov":
         return {
             "mode": "current_pov_player_controlled",
-            "allowed_without_player_input": [
-                "involuntary body reaction that does not decide meaning or intent",
-                "minor continuity needed to preserve the already established pose or action",
-            ],
-            "must_wait_for_player": [
-                "important speech, question, promise, confession, consent or refusal",
-                "route, relationship, risk, force, secret disclosure or irreversible choice",
-            ],
-            "state_rule": "The current POV is player-controlled; never use npc_autonomy_updates to invent its decisions.",
+            "state_rule": "Player input owns important POV words and decisions.",
         }
     if cid == "akira":
         return {
             "mode": "non_pov_low_stakes_scene_continuity",
             "allowed_without_player_input": [
-                "local movement inside the already established scene: sit, stand, turn, change distance or follow the immediate flow without leaving the zone",
-                "body language, glance, pause, dry irritation or a brief deflection",
-                "brief factual/neutral answer that keeps an ordinary question from hanging and does not settle a meaningful choice",
+                "brief factual/neutral answer, local movement or body reaction that does not settle a meaningful choice",
             ],
             "must_wait_for_player": [
-                "meaningful yes/no, consent or refusal",
-                "promise, confession, forgiveness, trust, relationship change or secret disclosure",
-                "new route, departure, cross-zone movement, following someone, risk, force or ability use",
+                "meaningful yes/no, consent, refusal, promise, secret, route, relationship, risk or force",
             ],
-            "state_rule": "Akira is never an autonomous NPC: never use npc_autonomy_updates to script her choices, location, availability or offscreen decisions.",
+            "state_rule": "Akira is never autonomous: never use npc_autonomy_updates to script her choices or offscreen decisions.",
         }
-    return {
-        "mode": "npc_goal_driven",
-        "allowed_without_player_input": ["actions and replies grounded in the NPC card, knowledge, goal, limits and current scene"],
-        "must_wait_for_player": [],
-        "state_rule": "NPC autonomy remains evidence-backed and must respect location, availability and ETA.",
-    }
+    return {"mode": "npc_goal_driven"}
 
 
 '''
