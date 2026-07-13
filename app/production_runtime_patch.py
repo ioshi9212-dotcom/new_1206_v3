@@ -203,6 +203,8 @@ def health() -> dict[str, Any]:
         "context_snapshot_protocol": "one_immutable_snapshot_per_turn_with_chunk_progress",
         "character_state_protocol": "evidence_sourced_memory_and_snapshot_scoped_relationships",
         "player_character_protocol": "current_pov_protected_nonpov_akira_low_stakes_micro_agency",
+        "scene_validation_protocol": "precommit_scene_gate_frozen_snapshot_rewrite_v1",
+        "automatic_scene_rewrite_attempts": 3,
         "world_time_protocol": "monotonic_evidence_backed_clock_and_current_day_only_calendar",
         "npc_autonomy_protocol": "offscreen_activity_location_availability_eta_and_missed_event_consequences",
         "state_storage": "atomic_json_with_recoverable_multi_file_journal",
@@ -487,13 +489,20 @@ def openapi_actions() -> dict[str, Any]:
         "relationship_updates": object_any,
         "relationship_pair_updates": {"type": "object", "description": "Evidence-backed, bounded deltas only for relationship_pair_ids loaded in the snapshot."},
         "dry_run": {"type": "boolean"},
+        "safety_checks": {"type": "object", "properties": {}, "additionalProperties": {"type": "boolean"}},
+        "continuity_checks": {"type": "object", "properties": {}, "additionalProperties": {"type": "boolean"}},
+        "scene_validation": _object_schema({
+            "repair_attempt": {"type": "integer", "minimum": 0},
+            "speaker_character_ids": _array_string(),
+            "addressed_character_responses": object_any,
+        }),
     }, required=["turn_id", "visible_scene_text"])
     return {
         "openapi": "3.1.0",
         "info": {
             "title": "Akira 1206 v3 Actions",
             "version": RUNTIME_VERSION,
-            "description": "Transactional API: processTurn creates turn_id; Railway freezes one snapshot with exact world time, NPC activity/location/availability/ETA, evidence-bounded character memory, relevant relationship pairs and player-control boundaries. The current POV keeps normal player-choice protection; a present non-POV Akira receives only low-stakes scene continuity. applyTurnResult atomically validates time, routes, events and state before scene text is shown.",
+            "description": "Transactional API: processTurn creates turn_id; Railway freezes one snapshot with exact world time, NPC activity/location/availability/ETA, evidence-bounded character memory, relevant relationship pairs and player-control boundaries. The current POV keeps normal player-choice protection; a present non-POV Akira receives only low-stakes scene continuity. applyTurnResult validates the draft, requests a same-turn rewrite when needed, then atomically validates time, routes, events and state before scene text is shown.",
         },
         "servers": [{"url": base.BASE_URL.rstrip("/")}],
         "paths": {
@@ -531,7 +540,7 @@ def openapi_actions() -> dict[str, Any]:
                 "get": {"operationId": "getStartSceneText", "summary": "Get the exact first-scene text only when preflight/chunk says exact_text_required.", "parameters": [_session_path_param()], "responses": {"200": _response("Exact start scene text")}}
             },
             "/api/v1/sessions/{session_id}/apply-turn-result": {
-                "post": {"operationId": "applyTurnResult", "summary": "Atomically apply this exact pending turn_id. Only its successful response authorizes showing visible_scene_text.", "parameters": [_session_path_param()], "requestBody": {"required": True, "content": {"application/json": {"schema": apply_body_schema}}}, "responses": {"200": _response("Atomic apply result")}}
+                "post": {"operationId": "applyTurnResult", "summary": "Validate and, if needed, rewrite this exact pending turn_id before atomic apply. Only a successful applied response authorizes showing visible_scene_text.", "parameters": [_session_path_param()], "requestBody": {"required": True, "content": {"application/json": {"schema": apply_body_schema}}}, "responses": {"200": _response("Validated atomic apply result")}}
             },
         },
     }
