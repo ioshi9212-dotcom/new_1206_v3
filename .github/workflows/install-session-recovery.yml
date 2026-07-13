@@ -26,6 +26,8 @@ jobs:
           python-version: "3.12"
       - name: Integrate recovery into existing owners
         run: python tools/install_session_recovery.py
+      - name: Update version assertions
+        run: python tools/fix_recovery_version_assertions.py
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
