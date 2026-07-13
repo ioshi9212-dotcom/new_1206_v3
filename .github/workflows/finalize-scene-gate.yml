@@ -1,0 +1,43 @@
+name: Finalize scene gate
+
+on:
+  pull_request:
+    branches:
+      - main
+    types:
+      - opened
+      - synchronize
+
+permissions:
+  contents: write
+
+jobs:
+  finalize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/scene-validation-rewrite-gate
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Apply final focused fixes
+        run: python tools/finalize_scene_gate.py
+      - name: Install test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt pytest httpx
+      - name: Compile complete runtime
+        run: python -m compileall -q app tests
+      - name: Run complete regression suite
+        run: PYTHONPATH=. pytest -q
+      - name: Commit final fixes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Restore Akira micro-agency and finalize scene stress tests"
+          git push origin HEAD:agent/scene-validation-rewrite-gate
