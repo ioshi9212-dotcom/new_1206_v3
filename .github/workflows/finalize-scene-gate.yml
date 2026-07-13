@@ -33,7 +33,19 @@ jobs:
       - name: Compile complete runtime
         run: python -m compileall -q app tests
       - name: Run complete regression suite
-        run: PYTHONPATH=. pytest -q
+        run: |
+          set +e
+          PYTHONPATH=. pytest -q --tb=short > finalize-pytest-output.txt 2>&1
+          status=$?
+          cat finalize-pytest-output.txt
+          exit $status
+      - name: Upload complete test output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: finalize-pytest-output
+          path: finalize-pytest-output.txt
+          if-no-files-found: error
       - name: Commit final fixes
         run: |
           git config user.name "github-actions[bot]"
