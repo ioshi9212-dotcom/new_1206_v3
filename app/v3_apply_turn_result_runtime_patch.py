@@ -15,6 +15,7 @@ from typing import Any
 from fastapi import Body
 
 from app import compact as base
+from app import scene_validation
 
 app = base.app
 RUNTIME_VERSION = base.APP_VERSION
@@ -1754,6 +1755,18 @@ def apply_turn_result_v3(session_id: str, body: dict[str, Any] | None = Body(def
                 next_action="getRequiredContextChunk",
             )
 
+        scene_gate = scene_validation.validate_scene(
+            sid, body, payload, turn_id, text, pending=pending, snapshot=context_snapshot
+        )
+        if not scene_gate["passed"]:
+            return scene_validation.rewrite_response(
+                sid,
+                turn_id,
+                scene_gate,
+                scene_validation.repair_attempt(body, payload),
+                runtime,
+            )
+
         new_revision = current_revision + 1
         writes: dict[str, Any] = {}
         changed: list[str] = []
@@ -1925,6 +1938,16 @@ def apply_turn_result_v3(session_id: str, body: dict[str, Any] | None = Body(def
                 "missed_event_consequences": len(time_autonomy_audit.get("missed_event_consequences") or []),
             },
         }
+        result["scene_validation"] = {
+            "passed": True,
+            "protocol": scene_validation.PROTOCOL,
+            "warnings": scene_gate["warnings"],
+            "checks": scene_gate["checks"],
+        }
+        result["display_instruction"] = (
+            "State and scene validation passed. Show visible_scene_text only; "
+            "hide validation and internal JSON."
+        )
         audit_result = {
             **result,
             "changed_files": changed,
