@@ -37,7 +37,7 @@ jobs:
       - name: Run regression suite
         run: |
           set +e
-          pytest -q --tb=short > pytest-output.txt 2>&1
+          PYTHONPATH=. pytest -q --tb=short > pytest-output.txt 2>&1
           status=$?
           cat pytest-output.txt
           exit $status
