@@ -18,6 +18,7 @@ from typing import Any
 from fastapi import Body
 
 from app import compact as base
+from app import session_recovery
 from app.compact import app
 
 # Register the transactional writer, then the one active context builder.
@@ -208,8 +209,23 @@ def health() -> dict[str, Any]:
         "world_time_protocol": "monotonic_evidence_backed_clock_and_current_day_only_calendar",
         "npc_autonomy_protocol": "offscreen_activity_location_availability_eta_and_missed_event_consequences",
         "state_storage": "atomic_json_with_recoverable_multi_file_journal",
+        "revision_snapshot_protocol": "before_image_per_applied_turn_with_hashes",
+        "rollback_protocol": "last_applied_turn_inverse_transaction_monotonic_revision",
+        "automatic_recovery_audit": "prepared_write_and_delete_replay_with_persistent_log",
         "large_contract_actions_disabled": True,
     }
+
+
+@app.get("/api/v1/sessions/{session_id}/integrity", operation_id="getSessionIntegrity")
+def get_session_integrity(session_id: str) -> dict[str, Any]:
+    """Recover any prepared transaction, then report canonical state consistency."""
+    return session_recovery.integrity_report(session_id)
+
+
+@app.post("/api/v1/sessions/{session_id}/rollback-last-turn", operation_id="rollbackLastTurn")
+def rollback_last_turn(session_id: str, body: dict[str, Any] | None = Body(default=None)) -> dict[str, Any]:
+    """Undo only the latest canonical apply through its captured inverse image."""
+    return session_recovery.rollback_last_turn(session_id, body)
 
 
 @app.post("/api/v1/sessions", operation_id="createSession")
@@ -496,13 +512,18 @@ def openapi_actions() -> dict[str, Any]:
             "speaker_character_ids": _array_string(),
             "addressed_character_responses": object_any,
         }),
+        "change_reason": {"type": "string", "description": "Optional short internal reason stored in the state change journal."},
     }, required=["turn_id", "visible_scene_text"])
+    rollback_body_schema = _object_schema({
+        "expected_state_revision": {"type": "integer", "description": "Optional optimistic concurrency guard from getSessionIntegrity."},
+        "reason": {"type": "string", "description": "Short audit reason for undoing the last applied turn."},
+    })
     return {
         "openapi": "3.1.0",
         "info": {
             "title": "Akira 1206 v3 Actions",
             "version": RUNTIME_VERSION,
-            "description": "Transactional API: processTurn creates turn_id; Railway freezes one snapshot with exact world time, NPC activity/location/availability/ETA, evidence-bounded character memory, relevant relationship pairs and player-control boundaries. The current POV keeps normal player-choice protection; a present non-POV Akira receives only low-stakes scene continuity. applyTurnResult validates the draft, requests a same-turn rewrite when needed, then atomically validates time, routes, events and state before scene text is shown.",
+            "description": "Transactional API: processTurn creates turn_id; Railway freezes one snapshot with exact world time, NPC activity/location/availability/ETA, evidence-bounded character memory, relevant relationship pairs and player-control boundaries. applyTurnResult validates and atomically commits the scene together with a rollback snapshot and change journal. getSessionIntegrity recovers interrupted transactions and verifies hashes; rollbackLastTurn restores the latest inverse image as a new monotonic revision.",
         },
         "servers": [{"url": base.BASE_URL.rstrip("/")}],
         "paths": {
@@ -517,6 +538,12 @@ def openapi_actions() -> dict[str, Any]:
             },
             "/api/v1/sessions/{session_id}/turn": {
                 "post": {"operationId": "processTurn", "summary": "Protect one player input and return its turn_id. Never overwrite a different pending turn.", "parameters": [_session_path_param()], "requestBody": {"required": True, "content": {"application/json": {"schema": process_turn_body_schema}}}, "responses": {"200": _response("Transactional turn ack")}}
+            },
+            "/api/v1/sessions/{session_id}/integrity": {
+                "get": {"operationId": "getSessionIntegrity", "summary": "Recover interrupted transactions, verify canonical hashes/revisions, and report rollback availability.", "parameters": [_session_path_param()], "responses": {"200": _response("Session integrity report")}}
+            },
+            "/api/v1/sessions/{session_id}/rollback-last-turn": {
+                "post": {"operationId": "rollbackLastTurn", "summary": "Undo the latest applied turn from its before-image as a new monotonic state revision.", "parameters": [_session_path_param()], "requestBody": {"required": False, "content": {"application/json": {"schema": rollback_body_schema}}}, "responses": {"200": _response("Rollback result")}}
             },
             "/api/v3/sessions/{session_id}/preflight": {
                 "get": {"operationId": "getPreflight", "summary": "Get small current frame only; do not write scene from this.", "parameters": [_session_path_param()], "responses": {"200": _response("Preflight slice")}}
