@@ -33,7 +33,19 @@ jobs:
       - name: Compile runtime and tests
         run: python -m compileall -q app tests
       - name: Run full regression suite
-        run: PYTHONPATH=. pytest -q --tb=short
+        run: |
+          set +e
+          PYTHONPATH=. pytest -q --tb=short > install-pytest-output.txt 2>&1
+          status=$?
+          cat install-pytest-output.txt
+          exit $status
+      - name: Upload regression diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: install-pytest-output
+          path: install-pytest-output.txt
+          if-no-files-found: error
       - name: Commit verified integration
         run: |
           git config user.name "github-actions[bot]"
