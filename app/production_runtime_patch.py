@@ -5,7 +5,8 @@ Transactional action-safe schema:
 - getTurnContract lets Railway decide what this scene needs.
 - getRequiredContextManifest returns the chunk plan.
 - getRequiredContextChunk returns small, ordered context chunks until has_more=false.
-- applyTurnResult atomically commits that same turn_id before text is shown.
+- context cards keep facts, observations, reports and beliefs separate and load only relevant pairs.
+- applyTurnResult validates evidence/snapshot scope and atomically commits that same turn_id before text is shown.
 """
 from __future__ import annotations
 
@@ -98,10 +99,20 @@ def _current_frame_ack(current: dict[str, Any]) -> dict[str, Any]:
 
 
 def _pending_state_patch(payload: dict[str, Any], current: dict[str, Any], player_input: str) -> dict[str, Any]:
-    patch: dict[str, Any] = {"last_player_input": player_input}
+    patch: dict[str, Any] = {
+        "last_player_input": player_input,
+        # Turn-local roles must never leak into the next scene merely because
+        # the caller omitted them on a later request.
+        "speaking_character_ids": [],
+        "addressed_character_ids": [],
+        "observing_character_ids": [],
+        "relationship_focus_pair_ids": [],
+        "thinking_about_character_ids": [],
+    }
     for key in [
         "pov_character_id", "active_character_ids", "scene_character_ids", "present_character_ids",
-        "speaking_character_ids", "addressed_character_ids", "relationship_pair_ids", "scene_goal",
+        "speaking_character_ids", "addressed_character_ids", "observing_character_ids",
+        "relationship_pair_ids", "relationship_focus_pair_ids", "thinking_about_character_ids", "scene_goal",
         "current_scene_id", "current_location_id", "current_location_text", "current_date", "current_day_phase",
         "past_trigger_character_ids", "load_past", "past_triggered",
     ]:
@@ -165,12 +176,13 @@ def health() -> dict[str, Any]:
         "version": RUNTIME_VERSION,
         "public_base_url": base.BASE_URL,
         "standalone_v3": True,
-        "context_pipeline": "single_server_snapshot_contract_manifest_ordered_chunks",
-        "knowledge_boundary": "visible_source_and_name_permission",
+        "context_pipeline": "single_server_snapshot_bounded_character_groups_ordered_chunks",
+        "knowledge_boundary": "evidence_buckets_visible_source_name_permission",
         "maintenance_runtime": "turn10_recovery_turn15_cleanup",
         "final_render_contract": "last_required_context_chunk",
         "turn_protocol": "pending_turn_turn_id_atomic_apply_v1",
         "context_snapshot_protocol": "one_immutable_snapshot_per_turn_with_chunk_progress",
+        "character_state_protocol": "evidence_sourced_memory_and_snapshot_scoped_relationships",
         "state_storage": "atomic_json_with_recoverable_multi_file_journal",
         "large_contract_actions_disabled": True,
     }
@@ -346,7 +358,10 @@ def openapi_actions() -> dict[str, Any]:
         "present_character_ids": _array_string(),
         "speaking_character_ids": _array_string(),
         "addressed_character_ids": _array_string(),
+        "observing_character_ids": _array_string(),
         "relationship_pair_ids": _array_string(),
+        "relationship_focus_pair_ids": _array_string(),
+        "thinking_about_character_ids": _array_string(),
         "scene_goal": {"type": "string"},
     }, required=["player_input"])
     scene_plan_schema = _object_schema({
@@ -357,6 +372,10 @@ def openapi_actions() -> dict[str, Any]:
         "speaking_characters": _array_string(),
         "addressed_characters": _array_string(),
         "present_characters": _array_string(),
+        "observing_characters": _array_string(),
+        "relationship_pair_ids": _array_string(),
+        "relationship_focus_pair_ids": _array_string(),
+        "thinking_about_character_ids": _array_string(),
         "required_blocks": object_any,
         "character_requests": object_any,
         "knowledge_boundary_required": {"type": "boolean"},
@@ -412,7 +431,7 @@ def openapi_actions() -> dict[str, Any]:
         "visible_scene_text": {"type": "string", "description": "Final scene text shown to the user."},
         "final_scene_text": {"type": "string", "description": "Alias/final scene text."},
         "scene_text": {"type": "string", "description": "Alias/final scene text."},
-        "proposed_updates": object_any,
+        "proposed_updates": {"type": "object", "description": "Dynamic state only. Character facts require source_type/evidence; relationship deltas are allowed only for pairs loaded in this turn snapshot."},
         "current_state_patch": object_any,
         "current_state_changes": object_any,
         "current_state": object_any,
@@ -420,9 +439,9 @@ def openapi_actions() -> dict[str, Any]:
         "scene_continuity_patch": object_any,
         "calendar_runtime_patch": object_any,
         "physical_continuity_patch": object_any,
-        "character_memory_updates": object_any,
+        "character_memory_updates": {"type": "object", "description": "Evidence-backed events for characters whose dynamic memory was loaded in the snapshot. Never personality/card rewrites."},
         "relationship_updates": object_any,
-        "relationship_pair_updates": object_any,
+        "relationship_pair_updates": {"type": "object", "description": "Evidence-backed, bounded deltas only for relationship_pair_ids loaded in the snapshot."},
         "dry_run": {"type": "boolean"},
     }, required=["turn_id", "visible_scene_text"])
     return {
@@ -430,7 +449,7 @@ def openapi_actions() -> dict[str, Any]:
         "info": {
             "title": "Akira 1206 v3 Actions",
             "version": RUNTIME_VERSION,
-            "description": "Transactional API: processTurn creates turn_id; Railway freezes one context snapshot; ordered chunks and applyTurnResult use it; scene text is shown only after a successful atomic apply.",
+            "description": "Transactional API: processTurn creates turn_id; Railway freezes one context snapshot with evidence-bounded character memory and only relevant relationship pairs; ordered chunks and applyTurnResult use it; scene text is shown only after a successful atomic apply.",
         },
         "servers": [{"url": base.BASE_URL.rstrip("/")}],
         "paths": {

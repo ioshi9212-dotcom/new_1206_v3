@@ -332,6 +332,100 @@ def test_explicit_non_akira_pov_does_not_load_akira_as_fallback(client: TestClie
     assert "akira" not in contract["character_ids"]
 
 
+def test_behavior_cards_keep_beliefs_out_of_facts_and_require_addressed_response(client: TestClient) -> None:
+    sid = "evidence-buckets-proof"
+    client.post("/api/v1/start", json={"session_id": sid})
+    base.write_json(
+        "state/character_memory/emma.json",
+        {
+            "character_id": "emma",
+            "knows_as_fact": ["Эмма видела Акиру на лестнице."],
+            "assumes": ["Джун может лгать о маршруте Акиры."],
+            "memory_events": [
+                {
+                    "event_id": "old-belief",
+                    "turn_id": "turn_old",
+                    "kind": "belief",
+                    "text": "Акира могла услышать разговор.",
+                    "source_type": "scene_inference",
+                    "evidence": "Эмма заметила движение наверху.",
+                }
+            ],
+        },
+        sid,
+    )
+    turn = client.post(
+        f"/api/v1/sessions/{sid}/turn",
+        json={
+            "player_input": "Эмма, ответь прямо.",
+            "pov_character_id": "jun",
+            "active_character_ids": ["jun", "emma"],
+            "scene_character_ids": ["jun", "emma"],
+            "present_character_ids": ["jun", "emma"],
+            "addressed_character_ids": ["emma"],
+            "relationship_pair_ids": ["jun__emma"],
+        },
+    ).json()
+    contract, _manifest, chunks = load_all_context(client, sid, turn["turn_id"])
+    core_cards = {
+        cid: card
+        for chunk in chunks if chunk["chunk_type"] == "characters_core"
+        for cid, card in chunk["content"]["characters"].items()
+    }
+    knowledge_chunks = [chunk["content"] for chunk in chunks if chunk["chunk_type"] == "knowledge_boundaries"]
+    knowledge_cards = {
+        cid: card
+        for content in knowledge_chunks
+        for cid, card in content["characters"].items()
+    }
+    emma = knowledge_cards["emma"]
+
+    assert contract["memory_character_ids"] == ["jun", "emma"]
+    assert contract["relationship_pair_ids"] == ["jun__emma"]
+    assert core_cards["emma"]["response_obligation"] == {
+        "required": True,
+        "mode": "answer_or_visible_refusal",
+    }
+    assert "Эмма видела Акиру на лестнице." in emma["known_as_fact"]
+    assert "Джун может лгать о маршруте Акиры." in emma["beliefs_and_suspicions"]
+    assert "Джун может лгать о маршруте Акиры." not in emma["known_as_fact"]
+    assert "Акира могла услышать разговор." in emma["beliefs_and_suspicions"]
+    assert "Calendar" in knowledge_chunks[0]["calendar_exclusion_rule"]
+
+
+def test_relationship_loader_uses_active_pair_or_explicit_thought_not_all_pov_pairs(client: TestClient) -> None:
+    sid = "pair-relevance-proof"
+    client.post("/api/v1/start", json={"session_id": sid})
+    turn = client.post(
+        f"/api/v1/sessions/{sid}/turn",
+        json={
+            "player_input": "Смотрю на Джуна и вспоминаю резкого незнакомца.",
+            "pov_character_id": "akira",
+            "active_character_ids": ["akira", "jun"],
+            "scene_character_ids": ["akira", "jun"],
+            "present_character_ids": ["akira", "jun"],
+            "relationship_pair_ids": [
+                "akira__jun", "akira__emma", "akira__irey", "akira__raiden", "akira__ray"
+            ],
+            "relationship_focus_pair_ids": ["akira__raiden"],
+            "thinking_about_character_ids": ["raiden"],
+        },
+    ).json()
+    contract = client.post(
+        f"/api/v3/sessions/{sid}/turn-contract",
+        json={"turn_id": turn["turn_id"]},
+    ).json()
+
+    assert contract["character_ids"] == ["akira", "jun"]
+    assert contract["memory_character_ids"] == ["akira", "jun"]
+    assert contract["relationship_pair_ids"] == ["akira__raiden", "akira__jun"]
+    assert contract["relationship_pair_selection"]["relevance_reason"]["akira__raiden"] == (
+        "explicit_pair_focus_or_active_character_thinks_about_other"
+    )
+    assert "akira__emma" not in contract["relationship_pair_ids"]
+    assert "raiden" not in contract["memory_character_ids"]
+
+
 def test_missing_full_card_pov_is_blocked_without_summary_fallback(client: TestClient) -> None:
     sid = "missing-pov-proof"
     client.post("/api/v1/start", json={"session_id": sid})
@@ -383,6 +477,15 @@ def test_maximal_context_snapshot_keeps_each_action_chunk_bounded(client: TestCl
         "world_lore_minimal",
         "past_memory_minimal",
     }
+    core_chunks = [chunk for chunk in chunks if chunk["chunk_type"] == "characters_core"]
+    knowledge_chunks = [chunk for chunk in chunks if chunk["chunk_type"] == "knowledge_boundaries"]
+    assert len(core_chunks) == len(knowledge_chunks) == 2
+    assert {
+        cid for chunk in core_chunks for cid in chunk["content"]["characters"]
+    } == set(cast)
+    assert {
+        cid for chunk in knowledge_chunks for cid in chunk["content"]["characters"]
+    } == set(cast)
     assert max(len(json.dumps(chunk, ensure_ascii=False)) for chunk in chunks) < 25_000
     assert len(json.dumps(snapshot, ensure_ascii=False)) < 100_000
     past = next(chunk["content"] for chunk in chunks if chunk["chunk_type"] == "past_memory_minimal")
@@ -489,6 +592,195 @@ def test_apply_is_required_idempotent_and_revisioned(client: TestClient) -> None
     assert rejected["status"] == "rejected"
 
 
+def test_apply_writes_evidence_events_and_bounded_relationship_delta(client: TestClient) -> None:
+    sid = "evidence-apply-proof"
+    client.post("/api/v1/start", json={"session_id": sid})
+    turn_id = client.post(
+        f"/api/v1/sessions/{sid}/turn",
+        json={"player_input": "Спускаюсь на лестницу и смотрю на женщину внизу."},
+    ).json()["turn_id"]
+    load_all_context(client, sid, turn_id)
+
+    unsourced = client.post(
+        f"/api/v1/sessions/{sid}/apply-turn-result",
+        json={
+            "turn_id": turn_id,
+            "visible_scene_text": "Эмма подняла взгляд на лестницу.",
+            "character_memory_updates": [
+                {"character_id": "emma", "knows_as_fact": ["Акира стоит на лестнице."]}
+            ],
+        },
+    ).json()
+    assert unsourced["status"] == "rejected"
+    assert unsourced["validation_errors"][0]["code"] == "invalid_or_missing_source_type"
+    assert base.read_turn_runtime(sid)["state_revision"] == 0
+    assert base.read_turn_runtime(sid)["pending_turn"]["turn_id"] == turn_id
+
+    calendar_leak = client.post(
+        f"/api/v1/sessions/{sid}/apply-turn-result",
+        json={
+            "turn_id": turn_id,
+            "visible_scene_text": "Эмма подняла взгляд на лестницу.",
+            "character_memory_updates": [
+                {
+                    "character_id": "emma",
+                    "events": [{
+                        "kind": "fact",
+                        "text": "Завтра прибудет новый отряд.",
+                        "source_type": "calendar",
+                        "evidence": "Сюжетный календарь.",
+                    }],
+                }
+            ],
+        },
+    ).json()
+    assert calendar_leak["validation_errors"][0]["code"] == "forbidden_knowledge_source"
+
+    touch_mind_read = client.post(
+        f"/api/v1/sessions/{sid}/apply-turn-result",
+        json={
+            "turn_id": turn_id,
+            "visible_scene_text": "Ирэй коснулся её запястья и тут же отпустил.",
+            "character_memory_updates": [
+                {
+                    "character_id": "irey",
+                    "events": [{
+                        "kind": "fact",
+                        "text": "Ирэй узнал мысли и воспоминания Акиры.",
+                        "source_type": "intentional_touch_sensory",
+                        "evidence": "Касание дало только телесный сенсорный отклик.",
+                    }],
+                }
+            ],
+        },
+    ).json()
+    assert touch_mind_read["validation_errors"][0]["code"] == "fact_without_confirming_source"
+
+    applied = client.post(
+        f"/api/v1/sessions/{sid}/apply-turn-result",
+        json={
+            "turn_id": turn_id,
+            "visible_scene_text": "Эмма подняла взгляд на лестницу и замолчала на полуслове.",
+            "proposed_updates": {
+                "character_memory_updates": [
+                    {
+                        "character_id": "emma",
+                        "events": [
+                            {
+                                "kind": "fact",
+                                "text": "Акира показалась на лестнице.",
+                                "source_type": "direct_observation",
+                                "evidence": "Эмма увидела Акиру на лестнице.",
+                            },
+                            {
+                                "kind": "belief",
+                                "text": "Акира может попытаться уйти.",
+                                "source_type": "scene_inference",
+                                "evidence": "Акира остановилась у выхода с лестницы.",
+                            },
+                        ],
+                    }
+                ],
+                "relationship_pair_updates": [
+                    {
+                        "pair_id": "akira__emma",
+                        "note": "Первый прямой зрительный контакт усилил давление.",
+                        "tension": 3,
+                        "evidence": "Эмма оборвала фразу, увидев Акиру.",
+                    }
+                ],
+            },
+        },
+    ).json()
+    memory = base.read_json("state/character_memory/emma.json", sid, {})
+    pair = base.read_json("state/relationship_pairs/akira__emma.json", sid, {})
+
+    assert applied["status"] == "applied"
+    assert applied["state_update_summary"] == {
+        "character_memory_files": 1,
+        "relationship_pair_files": 1,
+    }
+    assert {event["kind"] for event in memory["memory_events"]} >= {"fact", "belief"}
+    assert all(event["turn_id"] == turn_id for event in memory["memory_events"])
+    assert all(event["evidence"] for event in memory["memory_events"])
+    assert "Акира показалась на лестнице." in memory["знает_как_факт"]
+    assert "Акира может попытаться уйти." in memory["предполагает"]
+    assert pair["metrics"]["tension"] == 3
+    assert pair["relationship_events"][-1]["turn_id"] == turn_id
+    assert pair["relationship_events"][-1]["deltas"] == {"tension": 3.0}
+
+
+def test_apply_rejects_unloaded_pair_large_delta_and_personality_rewrite(client: TestClient) -> None:
+    sid = "state-scope-guard-proof"
+    client.post("/api/v1/start", json={"session_id": sid})
+    turn = client.post(
+        f"/api/v1/sessions/{sid}/turn",
+        json={
+            "player_input": "Жду ответа Эммы.",
+            "pov_character_id": "jun",
+            "active_character_ids": ["jun", "emma"],
+            "scene_character_ids": ["jun", "emma"],
+            "present_character_ids": ["jun", "emma"],
+            "addressed_character_ids": ["emma"],
+            "relationship_pair_ids": ["jun__emma", "akira__raiden"],
+        },
+    ).json()
+    turn_id = turn["turn_id"]
+    contract, _manifest, _chunks = load_all_context(client, sid, turn_id)
+    assert contract["relationship_pair_ids"] == ["jun__emma"]
+
+    unloaded_pair = client.post(
+        f"/api/v1/sessions/{sid}/apply-turn-result",
+        json={
+            "turn_id": turn_id,
+            "visible_scene_text": "Эмма не ответила сразу.",
+            "relationship_pair_updates": [{"pair_id": "akira__raiden", "tension": 1}],
+        },
+    ).json()
+    assert unloaded_pair["validation_errors"][0]["code"] == "relationship_pair_not_loaded"
+
+    absent_memory = client.post(
+        f"/api/v1/sessions/{sid}/apply-turn-result",
+        json={
+            "turn_id": turn_id,
+            "visible_scene_text": "Эмма не ответила сразу.",
+            "character_memory_updates": [
+                {"character_id": "akira", "memory": ["Узнала о разговоре, хотя отсутствовала."]}
+            ],
+        },
+    ).json()
+    assert absent_memory["validation_errors"][0]["code"] == "character_memory_not_loaded"
+
+    large_delta = client.post(
+        f"/api/v1/sessions/{sid}/apply-turn-result",
+        json={
+            "turn_id": turn_id,
+            "visible_scene_text": "Эмма не ответила сразу.",
+            "relationship_pair_updates": [{"pair_id": "jun__emma", "tension": 11}],
+        },
+    ).json()
+    assert large_delta["validation_errors"][0]["code"] == "relationship_delta_too_large"
+
+    personality = client.post(
+        f"/api/v1/sessions/{sid}/apply-turn-result",
+        json={
+            "turn_id": turn_id,
+            "visible_scene_text": "Эмма не ответила сразу.",
+            "character_memory_updates": [
+                {"character_id": "emma", "patch": {"personality": "Теперь всегда послушная."}}
+            ],
+        },
+    ).json()
+    assert personality["validation_errors"][0]["code"] == "static_character_rewrite_blocked"
+    assert base.read_turn_runtime(sid)["state_revision"] == 0
+
+    valid = client.post(
+        f"/api/v1/sessions/{sid}/apply-turn-result",
+        json={"turn_id": turn_id, "visible_scene_text": "Эмма выдержала паузу и ответила вопросом на вопрос."},
+    ).json()
+    assert valid["status"] == "applied"
+
+
 def test_interrupted_multi_file_apply_rolls_forward_once(
     client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
@@ -547,11 +839,24 @@ def test_thirty_transactional_turns_keep_one_revision_per_scene(client: TestClie
         ).json()
         turn_id = turn["turn_id"]
         turn_ids.append(turn_id)
-        load_all_context(client, sid, turn_id)
+        _contract, _manifest, context_chunks = load_all_context(client, sid, turn_id)
+        assert max(len(json.dumps(chunk, ensure_ascii=False)) for chunk in context_chunks) < 25_000
         body = {
             "turn_id": turn_id,
             "visible_scene_text": f"Тестовая сцена {number}.",
             "current_state_patch": {"current_scene_id": f"scene_{number}"},
+            "proposed_updates": {
+                "character_memory_updates": [
+                    {"character_id": "emma", "memory": [f"Тестовое наблюдение {number}."]}
+                ],
+                "relationship_pair_updates": [
+                    {
+                        "pair_id": "akira__emma",
+                        "note": f"Тестовое изменение отношений {number}.",
+                        "tension": 1,
+                    }
+                ],
+            },
         }
         applied = client.post(f"/api/v1/sessions/{sid}/apply-turn-result", json=body).json()
         assert applied["state_revision"] == number
@@ -568,3 +873,9 @@ def test_thirty_transactional_turns_keep_one_revision_per_scene(client: TestClie
     assert runtime["pending_turn"] is None
     assert story_lines["turn_counter"] == 30
     assert [entry["turn_id"] for entry in entries] == turn_ids
+    memory = base.read_json("state/character_memory/emma.json", sid, {})
+    relationship = base.read_json("state/relationship_pairs/akira__emma.json", sid, {})
+    assert len(memory["memory_events"]) == 30
+    assert len({event["event_id"] for event in memory["memory_events"]}) == 30
+    assert len(relationship["relationship_events"]) == 30
+    assert relationship["metrics"]["tension"] == 30

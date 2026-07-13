@@ -1,6 +1,6 @@
 {
   "id": "relationship_pair_template",
-  "version": "v1",
+  "version": "v2_evidence_events",
   "file_type": "relationship_pair_dynamic_state_template",
   "pair_id": "character_a__character_b",
   "participants": [
@@ -24,6 +24,16 @@
     "attachment_level": "unknown",
     "conflict_level": "unknown"
   },
+  "metrics": {
+    "trust": 0,
+    "tension": 0,
+    "respect": 0,
+    "attachment": 0,
+    "jealousy": 0,
+    "conflict": 0
+  },
+  "relationship_events": [],
+  "applied_turn_ids": [],
   "character_a_to_character_b": {
     "visible_attitude": [],
     "internal_state": [],
@@ -65,6 +75,8 @@
   "compaction_notes": [
     "Do not flatten relationship into generic labels like friends/enemies/tense if specific hooks exist.",
     "Compress repeated routine interactions, but keep emotional pivots, promises, refusals, accusations and protected moments.",
-    "Keep who knows what and who does not know what."
+    "Keep who knows what and who does not know what.",
+    "Each new relationship event keeps turn_id, evidence, direction and bounded metric deltas.",
+    "Do not rewrite personality, force romance/forgiveness, or load this pair only because one participant is the POV."
   ]
 }

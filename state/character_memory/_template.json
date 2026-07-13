@@ -1,6 +1,6 @@
 {
   "id": "character_memory_template",
-  "version": "v1",
+  "version": "v2_evidence_events",
   "file_type": "character_dynamic_memory_template",
   "character_id": "example_character_id",
   "purpose": "Dynamic personal memory for one character. This is not a static character card and not a lore file.",
@@ -37,8 +37,13 @@
     "Every important fact should keep a source when possible: saw, heard, document, order, direct conversation, state update, witnessed event.",
     "Do not turn calendar, prompt, scene rules, runtime rules or hidden lore into this character's knowledge.",
     "If source is unclear, store it as suspicion, not confirmed fact.",
-    "If the character was absent, they do not know the scene unless another source later informs them."
+    "If the character was absent, they do not know the scene unless another source later informs them.",
+    "Calendar, prompt, runtime rules, scene instructions and hidden lore are never character knowledge.",
+    "Observation, heard report, belief, mistaken belief and confirmed fact stay separate.",
+    "A confirmed fact requires an in-world source_type and evidence from the played branch."
   ],
+  "memory_events": [],
+  "applied_turn_ids": [],
   "protected_moments": [
     {
       "date": "YYYY-MM-DD",

@@ -6,7 +6,8 @@ Principle:
 - Railway plans the turn once and freezes one server-side snapshot per turn_id.
 - Custom GPT receives several small chunks, not one huge JSON blob.
 - Manifest and chunks are served only from that immutable snapshot, in order.
-- Character depth is preserved: identity brief + voice + behavior + goal + knowledge boundary are always present.
+- Character depth is preserved: identity + voice + goals + evidence-separated knowledge + response duty are always present.
+- Dynamic memory is loaded only for scene-active characters; relationship pairs are selected by scene relevance.
 - Energy, deep appearance, lore and past are loaded only when the current turn actually needs them.
 """
 from __future__ import annotations
@@ -31,6 +32,7 @@ STORY_LINES_FILE = "state/story_lines.json"
 START_SCENE_PATH = "scenes/start_scene.md"
 RENDER_CONTRACT_PATH = "gpt/scene_output_contract_1206.json"
 CONTEXT_SNAPSHOT_FILE = base.CONTEXT_SNAPSHOT_FILE
+RELATIONSHIP_INDEX_FILE = "state/relationship_pairs/_index.json"
 
 ID_ALIASES = {
     "акира": "akira", "akira": "akira", "кира": "akira",
@@ -105,6 +107,23 @@ KNOWLEDGE_PATTERNS = {
     "hides": ("скрывает", "withholds", "hides", "sealed", "locked", "не раскры"),
     "rules": ("rule", "правил", "disclosure", "inference", "assumption", "предполага", "источник"),
 }
+
+MEMORY_FIELD_ALIASES = {
+    "observed": {"seen", "saw", "observed", "events_witnessed", "видел", "видела", "видело", "видели"},
+    "heard": {"heard", "слышал", "слышала", "слышало", "слышали"},
+    "facts": {"knows_as_fact", "known_facts", "знает_как_факт", "знает как факт"},
+    "beliefs": {"assumes", "suspects", "believes", "may_assume", "conclusions", "выводы", "предполагает", "подозревает"},
+    "mistakes": {"wrongly_believes", "wrong_beliefs", "misbelieves", "mistaken_beliefs", "mistakenly_believes", "ошибочно_считает"},
+    "unknowns": {"does_not_know", "does_not_know_active", "unknowns", "forbidden_as_fact", "не_знает", "не знает"},
+    "hides": {"is_hiding", "hides", "hides_from", "hides_currently", "скрывает", "скрывает_от"},
+    "agreements": {"agreements", "orders_or_duties", "договоренности", "договорённости"},
+    "goals": {"current_goal", "active_goals", "goals", "цель", "цели"},
+    "limitations": {"current_limitations", "limitations", "ограничения"},
+    "hooks": {"future_hooks", "open_threads", "зацепки_на_будущее"},
+    "recent": {"recent_scene_notes", "last_scene_notes", "last_scene_summary", "последние_сцены"},
+}
+
+ACTIVE_MEMORY_ROLES = {"pov", "speaking", "addressed", "observing", "present_reaction"}
 
 
 def _remove_route(path: str, method: str | None = None) -> None:
@@ -306,12 +325,94 @@ def _matching_lines(text: str, patterns: tuple[str, ...], *, max_lines: int = 10
     return [x for x in joined.splitlines() if x.strip()]
 
 
+def _confirmed_knowledge_lines(text: str, *, max_lines: int = 10, max_chars: int = 1100) -> list[str]:
+    excluded = (
+        "не знает", "не_знает", "does_not_know", "unknown", "strict_unknown",
+        "предполага", "подозрев", "assum", "suspect", "may believe", "может считать",
+        "ошибочно", "wrongly", "misbeliev", "скрывает", "hides", "withhold",
+    )
+    candidates = _matching_lines(text, KNOWLEDGE_PATTERNS["knows"], max_lines=max_lines * 3, max_chars=max_chars * 2)
+    result = [line for line in candidates if not any(term in line.lower().replace("ё", "е") for term in excluded)]
+    joined = _trim("\n".join(result[:max_lines]), max_chars)
+    return [line for line in joined.splitlines() if line.strip()]
+
+
+def _yaml_scalar_text(value: str) -> str:
+    text = value.strip()
+    if text.startswith("-"):
+        text = text[1:].strip()
+    if ":" in text and not text.startswith(("http:", "https:")):
+        key, remainder = text.split(":", 1)
+        if _memory_key(key) in {"id", "enabled", "disclosure", "reveal_rule", "can_lie", "can_partial", "status"}:
+            return ""
+        if _memory_key(key) in {"fact", "text", "summary"}:
+            text = remainder.strip()
+    if len(text) >= 2 and text[0] == text[-1] and text[0] in {'"', "'"}:
+        text = text[1:-1]
+    return _trim(text, 300)
+
+
+def _static_knowledge_buckets(text: str) -> dict[str, list[str]]:
+    buckets = {"facts": [], "unknowns": [], "beliefs": [], "mistakes": [], "hides": []}
+    active_category = ""
+    for raw_line in text.splitlines():
+        if not raw_line.strip() or raw_line.lstrip().startswith("#"):
+            continue
+        indent = len(raw_line) - len(raw_line.lstrip(" "))
+        stripped = raw_line.strip()
+        if indent == 0 and ":" in stripped:
+            root = _memory_key(stripped.split(":", 1)[0])
+            if root in {"stable_knows", "starting_knowledge", "known_at_start", "starting_facts"}:
+                active_category = "facts"
+            elif "does_not_know" in root or "strict_unknown" in root or root in {"unknowns", "known_name_rules"}:
+                active_category = "unknowns"
+            elif "misbelief" in root or "wrong_belief" in root:
+                active_category = "mistakes"
+            elif "inference" in root or "assumption" in root or "suspect" in root:
+                active_category = "beliefs"
+            elif "hide" in root or "withhold" in root or "avoid" in root:
+                active_category = "hides"
+            else:
+                active_category = ""
+            continue
+        if _memory_key(stripped.split(":", 1)[0]) == "fact" and ":" in stripped:
+            value = _yaml_scalar_text(stripped)
+            if value and value not in buckets["facts"]:
+                buckets["facts"].append(value)
+            continue
+        if active_category and stripped.startswith("-"):
+            value = _yaml_scalar_text(stripped)
+            if value and value not in buckets[active_category]:
+                buckets[active_category].append(value)
+    return buckets
+
+
 def _first_nonempty(*values: Any, max_chars: int = 500) -> str:
     for value in values:
         text = _trim(value, max_chars)
         if text:
             return text
     return ""
+
+
+def _bounded_lines(values: list[Any], *, max_items: int, max_chars: int) -> list[str]:
+    result: list[str] = []
+    used = 0
+    for value in values:
+        text = _memory_value_text(value)
+        if not text or text in result:
+            continue
+        remaining = max_chars - used
+        if remaining <= 0:
+            break
+        if len(text) > remaining:
+            text = _trim(text, remaining)
+        if text:
+            result.append(text)
+            used += len(text)
+        if len(result) >= max_items:
+            break
+    return result
 
 
 def _memory_lines(memory: dict[str, Any], keys: tuple[str, ...], *, max_items: int = 8, max_chars: int = 1000) -> list[str]:
@@ -338,6 +439,109 @@ def _memory_lines(memory: dict[str, Any], keys: tuple[str, ...], *, max_items: i
         walk(memory)
     joined = _trim("\n".join(x for x in result if x), max_chars)
     return [x for x in joined.splitlines() if x.strip()]
+
+
+def _memory_key(value: Any) -> str:
+    return str(value or "").strip().lower().replace("ё", "е").replace(" ", "_")
+
+
+def _memory_value_text(value: Any) -> str:
+    if isinstance(value, dict):
+        for key in ("text", "fact", "summary", "note", "event", "событие", "факт"):
+            if value.get(key):
+                return _trim(value.get(key), 260)
+        return _trim(json.dumps(value, ensure_ascii=False, sort_keys=True), 260)
+    return _trim(value, 260)
+
+
+def _memory_event_ledger(memory: dict[str, Any], *, max_items: int = 10) -> list[dict[str, Any]]:
+    events: list[dict[str, Any]] = []
+    for key in ("memory_events", "knowledge_history"):
+        values = memory.get(key)
+        if not isinstance(values, list):
+            continue
+        for raw in values:
+            if not isinstance(raw, dict):
+                continue
+            text = _memory_value_text(raw)
+            if not text:
+                continue
+            event = {
+                "event_id": _trim(raw.get("event_id"), 100) or None,
+                "turn_id": _trim(raw.get("turn_id"), 100) or None,
+                "kind": _trim(raw.get("kind") or raw.get("type"), 60) or "scene_memory",
+                "text": text,
+                "source_type": _trim(raw.get("source_type"), 80) or "legacy_unspecified",
+                "evidence": _trim(raw.get("evidence"), 160) or None,
+                "confidence": _trim(raw.get("confidence"), 40) or None,
+                "status": _trim(raw.get("status"), 40) or None,
+            }
+            events.append({key: value for key, value in event.items() if value is not None})
+    return events[-max_items:]
+
+
+def _memory_buckets(memory: dict[str, Any], *, max_items: int = 9) -> dict[str, list[str]]:
+    buckets: dict[str, list[str]] = {key: [] for key in MEMORY_FIELD_ALIASES}
+    alias_map = {
+        _memory_key(alias): category
+        for category, aliases in MEMORY_FIELD_ALIASES.items()
+        for alias in aliases
+    }
+
+    def add(category: str, value: Any) -> None:
+        values = value if isinstance(value, list) else [value]
+        for item in values:
+            text = _memory_value_text(item)
+            if text and text not in buckets[category] and len(buckets[category]) < max_items:
+                buckets[category].append(text)
+
+    def walk(obj: Any) -> None:
+        if not isinstance(obj, dict):
+            return
+        for key, value in obj.items():
+            normalized = _memory_key(key)
+            category = alias_map.get(normalized)
+            if category:
+                add(category, value)
+            elif normalized in {"memory", "current_status", "temporary_knowledge_state"}:
+                walk(value)
+
+    walk(memory)
+    event_categories = {
+        "observation": "observed", "observed": "observed", "seen": "observed",
+        "heard": "heard", "reported": "heard",
+        "fact": "facts", "learned_fact": "facts",
+        "belief": "beliefs", "suspicion": "beliefs", "inference": "beliefs",
+        "mistaken_belief": "mistakes", "wrong_belief": "mistakes",
+        "unknown_boundary": "unknowns", "hidden_intent": "hides",
+        "agreement": "agreements", "order": "agreements",
+        "goal": "goals", "limitation": "limitations", "future_hook": "hooks",
+        "scene_memory": "recent",
+    }
+    for event in _memory_event_ledger(memory, max_items=max_items * 2):
+        category = event_categories.get(_memory_key(event.get("kind")))
+        if not category:
+            continue
+        if event.get("status") == "resolved" and category in {"goals", "limitations", "hooks", "hides"}:
+            text = _memory_value_text(event.get("text"))
+            buckets[category] = [value for value in buckets[category] if value != text]
+            continue
+        add(category, event.get("text"))
+    return buckets
+
+
+def _response_obligation(role: str) -> dict[str, Any]:
+    if role == "pov":
+        return {"required": False, "mode": "player_controlled"}
+    if role == "addressed":
+        return {"required": True, "mode": "answer_or_visible_refusal"}
+    if role == "speaking":
+        return {"required": True, "mode": "goal_driven_turn"}
+    if role == "observing":
+        return {"required": False, "mode": "brief_observer_reaction"}
+    if role == "present_reaction":
+        return {"required": False, "mode": "brief_background_reaction"}
+    return {"required": False, "mode": "no_unsourced_action"}
 
 
 def _scene_text(payload: dict[str, Any], current: dict[str, Any], scene_plan: dict[str, Any]) -> str:
@@ -404,6 +608,20 @@ def _collect_character_ids(payload: dict[str, Any], current: dict[str, Any], sce
     return ids
 
 
+def _infer_direct_addressed_ids(player_input: str, cids: list[str]) -> list[str]:
+    text = str(player_input or "").lower().replace("ё", "е")
+    result: list[str] = []
+    for cid in cids:
+        aliases = {
+            alias.replace("ё", "е")
+            for alias, target in ID_ALIASES.items()
+            if target == cid and " " not in alias and "_" not in alias and len(alias) >= 3
+        }
+        if any(re.search(rf"(?:^|[^\w]){re.escape(alias)}\s*[,!:]", text) for alias in aliases):
+            result.append(cid)
+    return result
+
+
 def _role_for(cid: str, current: dict[str, Any], scene_plan: dict[str, Any]) -> str:
     pov = _canonical_id(current.get("pov_character_id"))
     if cid == pov:
@@ -412,10 +630,14 @@ def _role_for(cid: str, current: dict[str, Any], scene_plan: dict[str, Any]) -> 
     speaking += [_canonical_id(x) for x in (scene_plan.get("speaking_characters") or [])]
     addressed = [_canonical_id(x) for x in (current.get("addressed_character_ids") or [])]
     addressed += [_canonical_id(x) for x in (scene_plan.get("addressed_characters") or [])]
-    if cid in speaking:
-        return "speaking"
     if cid in addressed:
         return "addressed"
+    if cid in speaking:
+        return "speaking"
+    observing = [_canonical_id(x) for x in (current.get("observing_character_ids") or [])]
+    observing += [_canonical_id(x) for x in (scene_plan.get("observing_characters") or [])]
+    if cid in observing:
+        return "observing"
     present = [_canonical_id(x) for x in (current.get("present_character_ids") or [])]
     present += [_canonical_id(x) for x in (scene_plan.get("present_characters") or [])]
     if cid in present:
@@ -436,11 +658,11 @@ def _visible_labels_for(cid: str, current: dict[str, Any]) -> dict[str, str]:
     }
 
 
-def _character_sources(sid: str, cid: str) -> tuple[str, str, str, dict[str, Any]]:
+def _character_sources(sid: str, cid: str, *, include_memory: bool = True) -> tuple[str, str, str, dict[str, Any]]:
     char_text = _read_text(f"characters/{cid}/character.yaml", sid)
     know_text = _read_text(f"characters/{cid}/knowledge.yaml", sid)
     main_text = _read_text(f"characters/{cid}/main.yaml", sid)
-    memory = _read_json(f"state/character_memory/{cid}.json", sid, {})
+    memory = _read_json(f"state/character_memory/{cid}.json", sid, {}) if include_memory else {}
     if not isinstance(memory, dict):
         memory = {}
     return char_text, know_text, main_text, memory
@@ -495,27 +717,33 @@ def _goal_override(cid: str) -> list[str]:
 def _knowledge_guard_override(cid: str) -> dict[str, list[str]]:
     if cid == "emma":
         return {
-            "knows": ["Akira is needed by the hidden customer/system; Akira's trace was found near the house; Irey reacts too personally."],
+            "knows": ["Akira is needed by the hidden customer/system; Akira's trace was found near the house."],
+            "beliefs": ["Emma reads Irey's reactions as too personal; this is her interpretation, not proof of his motive."],
             "does_not_know": ["Does not know engine:jun by name; does not know he hid/raised/protected Akira; does not know Akira's amnesia; does not know Ray/Raiden connection."],
             "speech_guard": ["Must not say 'Джун' or 'Картер' until an in-scene source gives the name."],
         }
     if cid == "irey":
         return {
             "knows": ["Knows more about Akira than Emma; has a personal/protective motive; can notice body/recognition mismatch."],
+            "beliefs": ["Until the scene disproves it, Irey may assume Akira remembers him; an assumption is not a fact."],
             "does_not_know": ["Does not know engine:jun by name at start unless a played source gives it; does not know exact last two years; does not know what Akira currently remembers."],
             "speech_guard": ["Must refer to engine:jun as 'мужчина', 'хозяин дома', 'тот, кто её прятал' until name source."],
+            "ability_boundary": ["Intentional touch may give Irey a body/sensory response defined by his card; it never reveals another person's thoughts or memories."],
         }
     if cid == "akira":
         return {
             "knows": ["Remembers the last two years with Jun and current visible objects; does not automatically know hidden lore or strangers' names."],
+            "beliefs": [],
             "does_not_know": ["Does not know Emma/Irey names at start; does not know East Sector structure, Kairos/Echo terms, Raiden/Ray/Samuel history unless source appears."],
             "speech_guard": ["If player did not write Akira's speech outside parentheses, do not invent important Akira speech."],
         }
-    return {"knows": [], "does_not_know": [], "speech_guard": []}
+    return {"knows": [], "beliefs": [], "does_not_know": [], "speech_guard": [], "ability_boundary": []}
 
 
 def _character_core_card(sid: str, cid: str, role: str, needs: dict[str, bool], current: dict[str, Any]) -> dict[str, Any]:
-    char_text, know_text, main_text, memory = _character_sources(sid, cid)
+    memory_loaded = role in ACTIVE_MEMORY_ROLES
+    char_text, know_text, main_text, memory = _character_sources(sid, cid, include_memory=memory_loaded)
+    memory_buckets = _memory_buckets(memory) if memory_loaded else {key: [] for key in MEMORY_FIELD_ALIASES}
     line_boost = 11 if role == "pov" else 8
     if needs.get("dialogue_or_pressure"):
         line_boost += 2
@@ -525,79 +753,242 @@ def _character_core_card(sid: str, cid: str, role: str, needs: dict[str, bool], 
         "role_in_scene": role,
         "identity_brief": IDENTITY_OVERRIDES.get(cid) or _trim("; ".join(identity_lines), 500) or f"{cid}: use loaded card only; do not invent appearance.",
         "visible_labels": _visible_labels_for(cid, current),
-        "current_goal_priority": _goal_override(cid) + _matching_lines(main_text + "\n" + char_text, CHARACTER_PATTERNS["goal"], max_lines=6, max_chars=700),
+        "current_goal_priority": _bounded_lines((
+            memory_buckets["goals"]
+            + _goal_override(cid)
+            + _matching_lines(main_text + "\n" + char_text, CHARACTER_PATTERNS["goal"], max_lines=6, max_chars=700)
+        ), max_items=8, max_chars=1000),
+        "decision_constraints": {
+            "orders_and_agreements": _bounded_lines(memory_buckets["agreements"], max_items=4, max_chars=420),
+            "current_limitations": _bounded_lines(memory_buckets["limitations"], max_items=4, max_chars=420),
+            "unresolved_hooks": _bounded_lines(memory_buckets["hooks"], max_items=4, max_chars=500),
+            "internal_only_pressure": _bounded_lines(memory_buckets["hides"], max_items=3, max_chars=420),
+        },
         "voice_behavior_habits": _matching_lines(char_text, CHARACTER_PATTERNS["voice"] + CHARACTER_PATTERNS["behavior"], max_lines=line_boost, max_chars=1200),
         "must_react_to_now": _matching_lines(char_text + "\n" + know_text, CHARACTER_PATTERNS["reaction"], max_lines=line_boost, max_chars=1200),
+        "response_obligation": _response_obligation(role),
         "player_control_or_npc_rule": "POV: do not invent important Akira replies/questions/agreements." if role == "pov" else "NPC: each line must come from goal + visible source + knowledge/unknown boundary.",
         "energy_loaded": bool(needs.get("energy")),
         "energy_note": "Energy is omitted in this chunk because the scene did not request/trigger energy." if not needs.get("energy") else "Energy details are in energy_lore chunk.",
+        "dynamic_memory_loaded": memory_loaded,
         "source_files_used": [
             f"characters/{cid}/main.yaml",
             f"characters/{cid}/character.yaml",
             f"characters/{cid}/knowledge.yaml",
-            f"state/character_memory/{cid}.json",
-        ],
+        ] + ([f"state/character_memory/{cid}.json"] if memory_loaded else []),
     }
 
 
 def _character_knowledge_card(sid: str, cid: str, role: str, needs: dict[str, bool]) -> dict[str, Any]:
-    char_text, know_text, main_text, memory = _character_sources(sid, cid)
+    memory_loaded = role in ACTIVE_MEMORY_ROLES
+    char_text, know_text, main_text, memory = _character_sources(sid, cid, include_memory=memory_loaded)
+    memory_buckets = _memory_buckets(memory) if memory_loaded else {key: [] for key in MEMORY_FIELD_ALIASES}
+    static_buckets = _static_knowledge_buckets(know_text)
     guard = _knowledge_guard_override(cid)
     line_boost = 10 if role in {"pov", "speaking", "addressed"} else 7
+    confirmed = (
+        guard.get("knows", [])
+        + static_buckets["facts"]
+        + _confirmed_knowledge_lines(know_text, max_lines=line_boost, max_chars=1100)
+        + memory_buckets["facts"]
+    )
     return {
         "id": cid,
         "role_in_scene": role,
-        "known_as_fact": guard.get("knows", []) + _matching_lines(know_text, KNOWLEDGE_PATTERNS["knows"] + KNOWLEDGE_PATTERNS["rules"], max_lines=line_boost, max_chars=1100) + _memory_lines(memory, ("knows", "assumes", "suspects", "предполага", "знает"), max_items=5, max_chars=700),
-        "unknown_or_forbidden": guard.get("does_not_know", []) + _matching_lines(know_text, KNOWLEDGE_PATTERNS["unknowns"] + KNOWLEDGE_PATTERNS["hides"], max_lines=line_boost, max_chars=1100) + _memory_lines(memory, ("does_not_know", "не знает", "hiding", "is_hiding", "скры"), max_items=5, max_chars=700),
-        "speech_and_name_guard": guard.get("speech_guard", []) + UNKNOWN_NAME_RULES,
+        "known_as_fact": _bounded_lines(confirmed, max_items=12, max_chars=1500),
+        "direct_observations": _bounded_lines(memory_buckets["observed"], max_items=7, max_chars=700),
+        "heard_or_reported": _bounded_lines(memory_buckets["heard"], max_items=7, max_chars=700),
+        "beliefs_and_suspicions": _bounded_lines((
+            guard.get("beliefs", [])
+            + static_buckets["beliefs"]
+            + _matching_lines(know_text, ("предполага", "подозр", "assum", "suspect", "may_believe", "may believe"), max_lines=6, max_chars=650)
+            + memory_buckets["beliefs"]
+        ), max_items=8, max_chars=900),
+        "known_mistakes": _bounded_lines((
+            _matching_lines(know_text, ("ошибочно", "wrongly", "misbeliev", "mistaken"), max_lines=5, max_chars=500)
+            + static_buckets["mistakes"]
+            + memory_buckets["mistakes"]
+        ), max_items=6, max_chars=600),
+        "unknown_or_forbidden": _bounded_lines((
+            guard.get("does_not_know", [])
+            + static_buckets["unknowns"]
+            + _matching_lines(know_text, KNOWLEDGE_PATTERNS["unknowns"], max_lines=line_boost, max_chars=1100)
+            + memory_buckets["unknowns"]
+        ), max_items=12, max_chars=1500),
+        "actively_hidden_internal_only": _bounded_lines((
+            _matching_lines(know_text, KNOWLEDGE_PATTERNS["hides"], max_lines=line_boost, max_chars=800)
+            + static_buckets["hides"]
+            + memory_buckets["hides"]
+        ), max_items=8, max_chars=850),
+        "recent_evidence_ledger": _memory_event_ledger(memory, max_items=3) if memory_loaded else [],
+        "speech_and_name_guard": guard.get("speech_guard", []) or ["Use global_name_rules plus this character's source-backed name permissions."],
+        "ability_knowledge_boundary": guard.get("ability_boundary", []),
         "unknowns_are_active_rule": "Unknowns should create questions, checks, pauses, pressure, evasion, bluffing or wrong assumptions — not omniscience and not silence.",
-        "source_files_used": [f"characters/{cid}/knowledge.yaml", f"state/character_memory/{cid}.json"],
+        "dynamic_memory_loaded": memory_loaded,
+        "source_files_used": [f"characters/{cid}/knowledge.yaml"] + ([f"state/character_memory/{cid}.json"] if memory_loaded else []),
     }
 
 
 def _energy_card(sid: str, cids: list[str]) -> dict[str, Any]:
     result: dict[str, Any] = {}
     for cid in cids:
-        char_text, know_text, _main_text, _memory = _character_sources(sid, cid)
+        char_text, know_text, _main_text, _memory = _character_sources(sid, cid, include_memory=False)
         ability = _matching_lines(char_text + "\n" + know_text, CHARACTER_PATTERNS["ability"], max_lines=7, max_chars=900)
         if ability:
             result[cid] = ability
     return {"energy_loaded_for": list(result.keys()), "characters": result, "rule": "Use only if energy is visible, used, sensed, discussed or mechanically relevant this turn."}
 
 
-def _relationship_cards(sid: str, current: dict[str, Any], payload: dict[str, Any], cids: list[str]) -> dict[str, Any]:
-    pairs = payload.get("relationship_pair_ids") or current.get("relationship_pair_ids", [])
-    focus = set(cids)
+def _pair_parts(value: Any) -> tuple[str, str] | None:
+    parts = [part for part in str(value or "").strip().split("__") if part]
+    if len(parts) != 2:
+        return None
+    left, right = _canonical_id(parts[0]), _canonical_id(parts[1])
+    if not left or not right or left == right:
+        return None
+    return left, right
+
+
+def _relationship_registry(sid: str) -> dict[str, str]:
+    index = _read_json(RELATIONSHIP_INDEX_FILE, sid, {})
+    files = index.get("files") if isinstance(index, dict) and isinstance(index.get("files"), dict) else {}
+    return {
+        str(pair_id): str(path)
+        for pair_id, path in files.items()
+        if _pair_parts(pair_id) and str(path or "").startswith("state/relationship_pairs/")
+    }
+
+
+def _resolve_pair_id(value: Any, registry: dict[str, str]) -> str:
+    parts = _pair_parts(value)
+    if not parts:
+        return ""
+    direct = f"{parts[0]}__{parts[1]}"
+    reverse = f"{parts[1]}__{parts[0]}"
+    if direct in registry:
+        return direct
+    if reverse in registry:
+        return reverse
+    return ""
+
+
+def _list_values(value: Any) -> list[Any]:
+    if isinstance(value, list):
+        return value
+    if value is None:
+        return []
+    return [value]
+
+
+def _select_relationship_pairs(
+    sid: str,
+    current: dict[str, Any],
+    payload: dict[str, Any],
+    scene_plan: dict[str, Any],
+    cids: list[str],
+    roles: dict[str, str],
+) -> tuple[list[str], dict[str, Any]]:
+    registry = _relationship_registry(sid)
+    active = {cid for cid in cids if roles.get(cid) in ACTIVE_MEMORY_ROLES}
+    explicit_raw: list[Any] = []
+    for container in (payload, scene_plan, current):
+        if not isinstance(container, dict):
+            continue
+        for key in ("relationship_focus_pair_ids", "relevant_relationship_pair_ids"):
+            explicit_raw.extend(_list_values(container.get(key)))
+    pov = _canonical_id(current.get("pov_character_id"))
+    for container in (payload, scene_plan, current):
+        if not isinstance(container, dict) or not pov:
+            continue
+        for target in _list_values(container.get("thinking_about_character_ids")):
+            target_id = _canonical_id(target)
+            if target_id and target_id != pov:
+                explicit_raw.append(f"{pov}__{target_id}")
+
+    explicit = []
+    for raw in explicit_raw:
+        resolved = _resolve_pair_id(raw, registry)
+        if resolved and resolved not in explicit:
+            explicit.append(resolved)
+
+    current_candidates = []
+    for container in (current, payload, scene_plan):
+        if not isinstance(container, dict):
+            continue
+        for raw in _list_values(container.get("relationship_pair_ids")):
+            resolved = _resolve_pair_id(raw, registry)
+            if resolved and resolved not in current_candidates:
+                current_candidates.append(resolved)
+
+    ordered = explicit + current_candidates + [pair_id for pair_id in registry if pair_id not in explicit and pair_id not in current_candidates]
+    selected: list[str] = []
+    reasons: dict[str, str] = {}
+    excluded: dict[str, str] = {}
+    for pair_id in ordered:
+        if pair_id in selected or pair_id in excluded:
+            continue
+        parts = _pair_parts(pair_id)
+        if not parts:
+            continue
+        left, right = parts
+        both_active = left in active and right in active
+        one_active_explicit = pair_id in explicit and (left in active or right in active)
+        if both_active:
+            selected.append(pair_id)
+            reasons[pair_id] = "both_participants_scene_active"
+        elif one_active_explicit:
+            selected.append(pair_id)
+            reasons[pair_id] = "explicit_pair_focus_or_active_character_thinks_about_other"
+        else:
+            excluded[pair_id] = "not_both_active_and_not_explicit_pair_focus"
+        if len(selected) >= 8:
+            break
+    omitted_relevant = [
+        pair_id for pair_id in ordered
+        if pair_id not in selected and pair_id not in excluded
+    ]
+    return selected, {
+        "loaded_pair_ids": selected,
+        "relevance_reason": reasons,
+        "excluded_pair_ids": excluded,
+        "omitted_relevant_pair_ids": omitted_relevant,
+        "rule": "Load a pair only when both participants are scene-active, or when an active character explicitly thinks/speaks about that pair. POV alone never loads every pair.",
+    }
+
+
+def _relationship_cards(sid: str, pair_ids: list[str], selection: dict[str, Any]) -> dict[str, Any]:
+    registry = _relationship_registry(sid)
+    reasons = selection.get("relevance_reason") if isinstance(selection.get("relevance_reason"), dict) else {}
     result: dict[str, Any] = {}
-    for pair in list(pairs)[:8]:
-        pid = str(pair or "").strip()
-        if "__" not in pid:
+    for pid in pair_ids[:8]:
+        path = registry.get(pid)
+        parts = _pair_parts(pid)
+        if not path or not parts:
             continue
-        left, right = pid.split("__", 1)
-        if left not in focus and right not in focus:
-            continue
-        path = f"state/relationship_pairs/{pid}.json"
+        left, right = parts
         data = _read_json(path, sid, {})
         if not isinstance(data, dict) or not data:
             continue
+        directional = {
+            key: value
+            for key, value in data.items()
+            if isinstance(key, str) and "_to_" in key and isinstance(value, dict)
+        }
+        events = data.get("relationship_events") if isinstance(data.get("relationship_events"), list) else []
         result[pid] = {
+            "pair_id": pid,
+            "participants": data.get("participants") or [left, right],
             "source_file": path,
-            "summary": _first_nonempty(
-                data.get("surface_dynamic", {}).get("summary") if isinstance(data.get("surface_dynamic"), dict) else "",
-                data.get("summary"),
-                max_chars=500,
-            ),
-            "reaction_hooks": _compact(
-                {
-                    "left_to_right": data.get(str(left) + "_to_" + str(right)),
-                    "right_to_left": data.get(str(right) + "_to_" + str(left)),
-                    "last_interaction": data.get("last_interaction"),
-                    "open_thread": data.get("open_thread") or data.get("future_hooks"),
-                },
-                max_chars=850,
-                max_items=6,
-                depth=2,
-            ),
+            "relevance_reason": reasons.get(pid),
+            "surface_dynamic": _compact(data.get("surface_dynamic", {}), max_chars=650, max_items=8, depth=2),
+            "metrics": _compact(data.get("metrics", {}), max_chars=300, max_items=8, depth=1),
+            "directional_state_internal_only": _compact(directional, max_chars=900, max_items=4, depth=2),
+            "knowledge_boundaries": _compact(data.get("knowledge_boundaries", {}), max_chars=650, max_items=6, depth=2),
+            "shared_memory": _compact(data.get("shared_memory") or data.get("memory") or [], max_chars=600, max_items=6, depth=2),
+            "recent_relationship_events": _compact(events[-6:], max_chars=700, max_items=6, depth=2),
+            "protected_moments": _compact(data.get("protected_moments", [])[-4:] if isinstance(data.get("protected_moments"), list) else [], max_chars=650, max_items=4, depth=2),
+            "last_interaction": _compact(data.get("last_interaction", {}), max_chars=500, max_items=6, depth=2),
+            "writer_rule": "Let this pair shape distance, interruption, trust and misreading. Internal state is not narrator/POV knowledge; do not force romance, forgiveness or obedience.",
         }
     return result
 
@@ -615,8 +1006,11 @@ def _current_state_slice(current: dict[str, Any]) -> dict[str, Any]:
         "present_character_ids": current.get("present_character_ids", []),
         "speaking_character_ids": current.get("speaking_character_ids", []),
         "addressed_character_ids": current.get("addressed_character_ids", []),
+        "observing_character_ids": current.get("observing_character_ids", []),
         "conditional_character_ids": current.get("conditional_character_ids", []),
         "relationship_pair_ids": current.get("relationship_pair_ids", []),
+        "relationship_focus_pair_ids": current.get("relationship_focus_pair_ids", []),
+        "thinking_about_character_ids": current.get("thinking_about_character_ids", []),
         "visible_inventory": _compact(current.get("visible_inventory", []), max_chars=450, max_items=8, depth=2),
         "nearby_items": _compact(current.get("nearby_items", []), max_chars=450, max_items=8, depth=2),
         "scene_goal": _trim(current.get("scene_goal") or current.get("current_scene_goal"), 500),
@@ -779,7 +1173,14 @@ def _build_turn_contract(sid: str, payload: dict[str, Any]) -> dict[str, Any]:
             "turn_id does not match the protected pending turn; stale context was rejected.",
             "getTurnContract",
         )
-    scene_plan = payload.get("scene_plan") if isinstance(payload.get("scene_plan"), dict) else {}
+    scene_plan = dict(payload.get("scene_plan")) if isinstance(payload.get("scene_plan"), dict) else {}
+    for key in (
+        "speaking_characters", "addressed_characters", "present_characters", "observing_characters",
+        "character_ids", "characters", "character_requests", "relationship_pair_ids",
+        "relationship_focus_pair_ids", "thinking_about_character_ids",
+    ):
+        if key not in scene_plan and key in payload:
+            scene_plan[key] = payload[key]
     player_input = str(pending.get("player_input") or "")
     needs = _needs(payload, current, scene_plan, player_input)
     past_trigger_terms = _past_trigger_terms(current, scene_plan, player_input)
@@ -842,12 +1243,37 @@ def _build_turn_contract(sid: str, payload: dict[str, Any]) -> dict[str, Any]:
             "needed_input": "Delay them or make their relevance explicit in a later turn.",
         })
     roles = {cid: _role_for(cid, current, scene_plan) for cid in cids}
-    chunks: list[dict[str, Any]] = [
-        {"chunk_index": 0, "chunk_type": "characters_core", "contains": cids, "why": "identity brief + voice + behavior + goals; energy omitted unless triggered"},
-        {"chunk_index": 1, "chunk_type": "knowledge_boundaries", "contains": cids, "why": "knows/unknowns/hidden/name permissions for current speakers"},
-        {"chunk_index": 2, "chunk_type": "state_relationships_memory", "contains": ["current_state", "recent_history", "relationship_pairs"], "why": "continuity and relationship pressure"},
-        {"chunk_index": 3, "chunk_type": "location_inventory_calendar_render", "contains": ["location", "inventory_if_needed", "calendar", "render_contract"], "why": "scene mechanics and final writer rules"},
-    ]
+    inferred_addressed = _infer_direct_addressed_ids(player_input, cids)
+    for cid in inferred_addressed:
+        if cid != pov_id:
+            roles[cid] = "addressed"
+    memory_character_ids = [cid for cid in cids if roles.get(cid) in ACTIVE_MEMORY_ROLES]
+    relationship_pair_ids, relationship_selection = _select_relationship_pairs(
+        sid, current, payload, scene_plan, cids, roles
+    )
+    if relationship_selection.get("omitted_relevant_pair_ids"):
+        diagnostics.append({
+            "severity": "warning",
+            "fallback_blocked": "unbounded_relationship_dump",
+            "reason": "Relationship context is bounded to eight relevant pairs for one turn.",
+            "omitted_pair_ids": relationship_selection["omitted_relevant_pair_ids"],
+        })
+    character_groups = [cids[index:index + 4] for index in range(0, len(cids), 4)]
+    chunks: list[dict[str, Any]] = []
+    for group in character_groups:
+        chunks.append({
+            "chunk_index": len(chunks), "chunk_type": "characters_core", "contains": group,
+            "why": "bounded identity + voice + behavior + goals; energy omitted unless triggered",
+        })
+    for group in character_groups:
+        chunks.append({
+            "chunk_index": len(chunks), "chunk_type": "knowledge_boundaries", "contains": group,
+            "why": "bounded facts/observations/reports/beliefs/unknowns; calendar is not NPC knowledge",
+        })
+    chunks.extend([
+        {"chunk_index": len(chunks), "chunk_type": "state_relationships_memory", "contains": ["current_state", "recent_history", *relationship_pair_ids], "why": "continuity plus only scene-relevant relationship pressure"},
+        {"chunk_index": len(chunks) + 1, "chunk_type": "location_inventory_calendar_render", "contains": ["location", "inventory_if_needed", "calendar", "render_contract"], "why": "scene mechanics and final writer rules"},
+    ])
     if needs.get("energy"):
         chunks.append({"chunk_index": len(chunks), "chunk_type": "energy_lore", "contains": cids, "why": "energy/power/echo was triggered by this turn"})
     if needs.get("lore"):
@@ -871,16 +1297,25 @@ def _build_turn_contract(sid: str, payload: dict[str, Any]) -> dict[str, Any]:
         "past_trigger_terms": past_trigger_terms,
         "character_ids": cids,
         "character_roles": roles,
+        "inferred_addressed_character_ids": inferred_addressed,
+        "memory_character_ids": memory_character_ids,
+        "relationship_pair_ids": relationship_pair_ids,
+        "relationship_pair_selection": relationship_selection,
         "pov_character_id": pov_id,
         "pov_loaded": pov_id in cids,
         "character_source_audit": {cid: source_audit[cid] for cid in cids},
         "writer_card_contract": {
             "required_for_each_loaded_character": [
                 "identity_brief", "current_goal_priority", "voice_behavior_habits", "must_react_to_now",
-                "known_as_fact", "unknown_or_forbidden", "speech_and_name_guard",
+                "response_obligation", "known_as_fact", "direct_observations", "heard_or_reported",
+                "beliefs_and_suspicions", "unknown_or_forbidden", "speech_and_name_guard",
             ],
             "pov_rule": "POV full card is mandatory. Never insert Akira merely because she is the protagonist.",
             "npc_rule": "Active NPC behavior must come from goal + knowledge + unknowns + reaction triggers, never generic scene convenience.",
+            "addressed_rule": "A directly addressed full NPC must answer, gesture, refuse, interrupt or use meaningful silence; it does not have to comply.",
+            "background_rule": "Present non-focus characters may add one short visible reaction/intervention when relevant, without taking over the scene.",
+            "personality_rule": "A scene may change mood, trust or tactics, never rewrite static personality/voice for convenience.",
+            "knowledge_rule": "Never merge observations, reports, beliefs or mistakes into confirmed facts. Calendar/prompt/runtime/hidden lore are not NPC knowledge.",
         },
         "builder_diagnostics": diagnostics,
         "required_chunks": chunks,
@@ -937,28 +1372,60 @@ def _chunk_content(
     roles = contract.get("character_roles") if isinstance(contract.get("character_roles"), dict) else {cid: _role_for(cid, current, {}) for cid in cids}
     chunks = contract.get("required_chunks") if isinstance(contract.get("required_chunks"), list) else []
     chunk_type = "unknown"
+    chunk_meta: dict[str, Any] = {}
     if 0 <= chunk_index < len(chunks) and isinstance(chunks[chunk_index], dict):
-        chunk_type = str(chunks[chunk_index].get("chunk_type") or "unknown")
+        chunk_meta = chunks[chunk_index]
+        chunk_type = str(chunk_meta.get("chunk_type") or "unknown")
+    chunk_cids = cids
+    if chunk_type in {"characters_core", "knowledge_boundaries"} and isinstance(chunk_meta.get("contains"), list):
+        requested_group = [_canonical_id(value) for value in chunk_meta["contains"]]
+        chunk_cids = [cid for cid in cids if cid in requested_group]
 
     if chunk_type == "characters_core":
         return {
-            "characters": {cid: _character_core_card(sid, cid, str(roles.get(cid) or "referenced"), needs, current) for cid in cids},
+            "characters": {cid: _character_core_card(sid, cid, str(roles.get(cid) or "referenced"), needs, current) for cid in chunk_cids},
             "global_character_rules": [
                 "Character behavior comes from loaded cards first, not generic scene convenience.",
+                "NPCs may refuse, delay, lie within their knowledge, interrupt, stay or leave according to their own goals and limits; player wishes do not control them.",
+                "Directly addressed full characters must visibly respond, but never have to agree.",
+                "Background participants get only short relevant reactions unless the scene gives them a real reason to take focus.",
+                "Mood, trust and tactics may change; static personality, voice and values cannot be rewritten for scene convenience.",
+                "Internal goals may drive NPC action but are not POV knowledge and cannot be explained before visible disclosure.",
                 "Appearance is brief unless deep_appearance=true; never invent hair/age/height against identity_brief.",
                 "Akira is 25 and controlled/empty/guarded; do not soften her or write major speech for her.",
             ],
+            "response_mode_rules": {
+                "player_controlled": "Do not invent decisive speech, consent, refusal, plans or emotional conclusions for POV.",
+                "answer_or_visible_refusal": "Directly addressed full NPC must reply, gesture, refuse, interrupt, use meaningful silence, or leave if their goal permits; compliance is never automatic.",
+                "goal_driven_turn": "Continue from the NPC's goal, knowledge and limits, never as an exposition/helper button.",
+                "brief_observer_reaction": "React briefly only to visible/audible relevant stimulus and do not steal focus.",
+                "brief_background_reaction": "A short gesture/look/intervention may keep the room alive without taking the lead.",
+                "no_unsourced_action": "Referenced/absent character does not speak, observe or learn this scene without an in-world source.",
+            },
         }
     if chunk_type == "knowledge_boundaries":
         return {
-            "characters": {cid: _character_knowledge_card(sid, cid, str(roles.get(cid) or "referenced"), needs) for cid in cids},
+            "characters": {cid: _character_knowledge_card(sid, cid, str(roles.get(cid) or "referenced"), needs) for cid in chunk_cids},
+            "global_name_rules": UNKNOWN_NAME_RULES,
             "visible_source_rule": "Characters know only what they saw, heard, were told, or can plausibly infer from visible signs. Engine ids and loaded file names are not in-world knowledge.",
+            "calendar_exclusion_rule": "Calendar, scene rules, prompt instructions, runtime state and hidden lore guide the writer only; they never become a character's memory or dialogue fact.",
+            "evidence_bucket_rule": "Fact, observation, report, belief and mistake are different buckets. Never promote belief to fact. A source-backed played event may resolve an older dynamic unknown; static hidden lore still needs an in-world source.",
         }
     if chunk_type == "state_relationships_memory":
+        pair_ids = contract.get("relationship_pair_ids") if isinstance(contract.get("relationship_pair_ids"), list) else []
+        selection = contract.get("relationship_pair_selection") if isinstance(contract.get("relationship_pair_selection"), dict) else {}
         return {
             "current_state": _current_state_slice(current),
             "recent_scene_history": _history_slice(sid, 5),
-            "relationships": _relationship_cards(sid, current, {"relationship_pair_ids": current.get("relationship_pair_ids", [])}, cids),
+            "loaded_character_memory_ids": contract.get("memory_character_ids", []),
+            "loaded_relationship_pair_ids": pair_ids,
+            "relationship_selection": selection,
+            "relationships": _relationship_cards(sid, pair_ids, selection),
+            "state_write_contract": {
+                "character_memory": "Write only evidence-backed events for loaded_character_memory_ids. Facts require a source; beliefs stay beliefs.",
+                "relationships": "Write only loaded_relationship_pair_ids. Use bounded deltas tied to this scene; do not overwrite personality or hidden canon.",
+                "absent_character_rule": "An absent/referenced character neither witnesses nor learns the scene without an explicit later source.",
+            },
             "story_lines_note": _compact(_read_json(STORY_LINES_FILE, sid, {}), max_chars=1200, max_items=6, depth=2),
         }
     if chunk_type == "location_inventory_calendar_render":
@@ -1366,6 +1833,7 @@ def get_context_audit_action_safe(session_id: str) -> dict[str, Any]:
     sid = _sid(session_id)
     current = _ensure_current(sid)
     snapshot = base.read_session_json(CONTEXT_SNAPSHOT_FILE, sid, default={})
+    snapshot_contract = snapshot.get("contract") if isinstance(snapshot, dict) and isinstance(snapshot.get("contract"), dict) else {}
     return {
         "success": True,
         "session_id": sid,
@@ -1382,6 +1850,8 @@ def get_context_audit_action_safe(session_id: str) -> dict[str, Any]:
             "served_chunk_indices": snapshot.get("served_chunk_indices", []),
             "next_required_chunk_index": snapshot.get("next_required_chunk_index"),
             "all_required_chunks_served": bool(snapshot.get("all_required_chunks_served")),
+            "memory_character_ids": snapshot_contract.get("memory_character_ids", []),
+            "relationship_pair_ids": snapshot_contract.get("relationship_pair_ids", []),
         } if isinstance(snapshot, dict) and snapshot else None,
         "turn_contract_endpoint": f"/api/v3/sessions/{sid}/turn-contract",
         "manifest_endpoint": f"/api/v3/sessions/{sid}/required-context/manifest",
