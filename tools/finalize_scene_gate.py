@@ -45,7 +45,7 @@ context = replace_once(
 context = replace_once(
     context,
     '        "response_obligation": _response_obligation(role),\n        "player_control_or_npc_rule": "POV: do not invent important Akira replies/questions/agreements." if role == "pov" else "NPC: each line must come from goal + visible source + knowledge/unknown boundary.",\n',
-    '        "response_obligation": (\n            {"required": role == "addressed", "mode": "akira_low_stakes_reply_or_hold"}\n            if cid == "akira" and role != "pov"\n            else _response_obligation(role)\n        ),\n        "player_control_boundary": _player_control_boundary(cid, role),\n        "player_control_or_npc_rule": (\n            "POV choices stay with the player."\n            if role == "pov"\n            else (\n                "Non-POV Akira: low stakes only."\n                if cid == "akira"\n                else "NPC: each line must come from goal + visible source + knowledge/unknown boundary."\n            )\n        ),\n',
+    '        "response_obligation": (\n            {"required": role == "addressed", "mode": "akira_low_stakes_reply_or_hold"}\n            if cid == "akira" and role != "pov"\n            else _response_obligation(role)\n        ),\n        "player_control_boundary": _player_control_boundary(cid, role),\n        "player_control_or_npc_rule": (\n            "POV"\n            if role == "pov"\n            else (\n                "Akira"\n                if cid == "akira"\n                else "NPC: each line must come from goal + visible source + knowledge/unknown boundary."\n            )\n        ),\n',
     "core card control boundary",
 )
 context = replace_once(
