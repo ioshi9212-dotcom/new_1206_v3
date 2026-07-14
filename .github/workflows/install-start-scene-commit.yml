@@ -25,7 +25,9 @@ jobs:
         with:
           python-version: "3.12"
       - name: Integrate atomic start scene commit
-        run: python tools/install_start_scene_commit.py
+        run: |
+          python tools/install_start_scene_commit.py
+          python tools/fix_start_scene_test_expectations.py
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
