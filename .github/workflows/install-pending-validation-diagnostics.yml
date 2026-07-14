@@ -28,6 +28,9 @@ jobs:
         run: |
           set +e
           python tools/install_pending_validation_diagnostics.py > pending-validation-installer.txt 2>&1
+          first_status=$?
+          echo "Initial installer status: $first_status" >> pending-validation-installer.txt
+          python tools/continue_pending_validation_diagnostics.py >> pending-validation-installer.txt 2>&1
           status=$?
           cat pending-validation-installer.txt
           exit $status
