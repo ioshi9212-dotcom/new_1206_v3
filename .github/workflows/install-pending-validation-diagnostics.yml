@@ -41,7 +41,12 @@ jobs:
       - name: Compile runtime and tests
         run: python -m compileall -q app tests
       - name: Run focused pending validation tests
-        run: PYTHONPATH=. pytest -q tests/test_pending_validation_diagnostics.py --tb=short
+        run: |
+          set +e
+          PYTHONPATH=. pytest -q tests/test_pending_validation_diagnostics.py --tb=short > pending-validation-focused.txt 2>&1
+          status=$?
+          cat pending-validation-focused.txt
+          exit $status
       - name: Run full regression suite
         run: |
           set +e
@@ -56,6 +61,7 @@ jobs:
           name: pending-validation-diagnostics
           path: |
             pending-validation-installer.txt
+            pending-validation-focused.txt
             pending-validation-pytest.txt
           if-no-files-found: warn
       - name: Commit verified integration
