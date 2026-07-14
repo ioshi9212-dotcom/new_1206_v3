@@ -282,7 +282,7 @@ def test_legacy_snapshot_requires_explicit_turn_loss_confirmation(
 
 def test_openapi_exposes_strict_repair_action(client: TestClient) -> None:
     schema = client.get("/openapi-actions.json").json()
-    assert schema["info"]["version"] == "0.10.0-v3-quarantine-repair"
+    assert schema["info"]["version"] == "0.11.0-v3-start-scene-commit"
     repair = schema["paths"]["/api/v1/sessions/{session_id}/repair-state"]["post"]
     assert repair["operationId"] == "repairSessionState"
     request = repair["requestBody"]["content"]["application/json"]["schema"]

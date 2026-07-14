@@ -9,7 +9,7 @@ from typing import Any
 
 from app import compact as base
 
-VERSION = "0.10.0-v3-quarantine-repair"
+VERSION = "0.11.0-v3-start-scene-commit"
 PROTOCOL = "precommit_scene_gate_frozen_snapshot_rewrite_v1"
 MAX_SCENE_CHARS = 32000
 MAX_REWRITES = 3

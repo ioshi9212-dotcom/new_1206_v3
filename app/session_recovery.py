@@ -9,7 +9,7 @@ from typing import Any
 
 from app import compact as base
 
-VERSION = "0.10.0-v3-quarantine-repair"
+VERSION = "0.11.0-v3-start-scene-commit"
 LEGACY_SNAPSHOT_SCHEMA = "turn_revision_snapshot_v1"
 SNAPSHOT_SCHEMA = "turn_revision_snapshot_v2"
 SUPPORTED_SNAPSHOT_SCHEMAS = {LEGACY_SNAPSHOT_SCHEMA, SNAPSHOT_SCHEMA}
@@ -115,6 +115,7 @@ def build_apply_snapshot(
     paths: list[str],
     after_writes: dict[str, Any],
     reason: str,
+    kind: str = "apply",
 ) -> tuple[str, dict[str, Any]]:
     changed_paths = sorted(
         {
@@ -146,7 +147,7 @@ def build_apply_snapshot(
             after[normalized] = _image_from_data(data)
     snapshot = {
         "schema": SNAPSHOT_SCHEMA,
-        "kind": "apply",
+        "kind": _safe_text(kind, 80) or "apply",
         "status": "active",
         "snapshot_file": path,
         "turn_id": turn_id,
@@ -432,7 +433,13 @@ def rollback_last_turn(session_id: str, body: dict[str, Any] | None = None) -> d
             "deleted_paths": sorted(set(deletes)),
             "pending_turn_id": None,
             "visible_scene_output_allowed": False,
-            "next_action": "waitForPlayerInput",
+            "next_action": (
+                "getPreflight"
+                if isinstance(writes.get(CURRENT_STATE_FILE), dict)
+                and writes[CURRENT_STATE_FILE].get("start_scene_exact_text_required")
+                and not writes[CURRENT_STATE_FILE].get("start_scene_completed")
+                else "waitForPlayerInput"
+            ),
         }
 
 

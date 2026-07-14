@@ -21,6 +21,7 @@ from typing import Any
 from fastapi import Body
 
 from app import compact as base
+from app import start_scene_commit
 
 app = base.app
 RUNTIME_VERSION = base.APP_VERSION
@@ -1923,7 +1924,7 @@ def get_preflight(session_id: str) -> dict[str, Any]:
         writer_note = "Resume the protected pending turn_id. Do not replace it with another player input."
     elif start_scene_required:
         next_action = "getStartSceneText"
-        writer_note = "Show exact start scene text, then stop and wait for non-empty player input."
+        writer_note = "Fetch the exact opening, commit it atomically, then show the committed visible_scene_text once and stop."
     else:
         next_action = "waitForPlayerInput"
         writer_note = "No turn is pending. Wait for non-empty player input, then call processTurn."
@@ -1951,7 +1952,7 @@ def get_preflight(session_id: str) -> dict[str, Any]:
         "recent_scene_history": _history_slice(sid, 3),
         "next_action": next_action,
         "writer_note": writer_note,
-        "visible_scene_output_allowed": start_scene_required and not pending,
+        "visible_scene_output_allowed": False,
     }
 
 
@@ -2015,14 +2016,19 @@ def get_start_scene_text(session_id: str) -> dict[str, Any]:
     sid = _sid(session_id)
     current = _ensure_current(sid)
     required = bool(current.get("start_scene_exact_text_required") and not current.get("start_scene_completed"))
+    exact_text = start_scene_commit.exact_start_scene_text() if required else ""
     return {
         "success": True,
         "session_id": sid,
         "runtime_version": RUNTIME_VERSION,
         "mode": "v3_start_scene_text",
+        "state_revision": int(base.read_turn_runtime(sid).get("state_revision") or 0),
         "exact_text_required": required,
-        "exact_text": _extract_start_scene_text() if required else "",
-        "after_output_instruction": "Output exact_text once, then stop. Do not call processTurn with an empty/stale input and do not continue the scene. Wait for the player's next non-empty message.",
+        "exact_text": exact_text,
+        "exact_text_sha256": start_scene_commit.exact_start_scene_sha256() if required else None,
+        "visible_scene_output_allowed": False,
+        "next_action": "commitStartScene" if required else "getPreflight",
+        "after_output_instruction": "Do not display exact_text yet. Call commitStartScene with state_revision and exact_text_sha256; only after status=start_scene_committed show returned visible_scene_text exactly once, then stop and wait for the player's next non-empty message.",
     }
 
 

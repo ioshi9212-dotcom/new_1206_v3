@@ -655,8 +655,9 @@ def test_apply_is_required_idempotent_and_revisioned(client: TestClient) -> None
     assert base.read_json("state/story_lines.json", sid, {})["turn_counter"] == 1
     history = base.read_json("state/scene_history.json", sid, [])
     entries = history.get("entries", []) if isinstance(history, dict) else history
-    assert len(entries) == 1
-    assert entries[0]["turn_id"] == turn_id
+    assert [entry["kind"] for entry in entries] == ["opening", "gameplay"]
+    assert entries[0]["turn_id"] == "start_scene_opening"
+    assert entries[1]["turn_id"] == turn_id
 
     replay = client.post(f"/api/v1/sessions/{sid}/apply-turn-result", json=apply_body).json()
     assert replay["status"] == "applied"
@@ -664,7 +665,8 @@ def test_apply_is_required_idempotent_and_revisioned(client: TestClient) -> None
     assert base.read_json("state/story_lines.json", sid, {})["turn_counter"] == 1
     history = base.read_json("state/scene_history.json", sid, [])
     entries = history.get("entries", []) if isinstance(history, dict) else history
-    assert len(entries) == 1
+    assert len(entries) == 2
+    assert [entry["turn_id"] for entry in entries] == ["start_scene_opening", turn_id]
 
     rewritten = dict(apply_body)
     rewritten["visible_scene_text"] = "Другой текст для уже применённого хода."
@@ -904,7 +906,7 @@ def test_interrupted_multi_file_apply_rolls_forward_once(
     assert base.read_json("state/story_lines.json", sid, {})["turn_counter"] == 1
     history = base.read_json("state/scene_history.json", sid, [])
     entries = history.get("entries", []) if isinstance(history, dict) else history
-    assert [entry["turn_id"] for entry in entries] == [turn_id]
+    assert [entry["turn_id"] for entry in entries] == ["start_scene_opening", turn_id]
 
 
 def test_thirty_transactional_turns_keep_one_revision_per_scene(client: TestClient) -> None:
@@ -952,7 +954,9 @@ def test_thirty_transactional_turns_keep_one_revision_per_scene(client: TestClie
     assert runtime["next_turn_number"] == 31
     assert runtime["pending_turn"] is None
     assert story_lines["turn_counter"] == 30
-    assert [entry["turn_id"] for entry in entries] == turn_ids
+    assert entries[0]["turn_id"] == "start_scene_opening"
+    gameplay_entries = [entry for entry in entries if entry.get("kind") == "gameplay"]
+    assert [entry["turn_id"] for entry in gameplay_entries] == turn_ids
     memory = base.read_json("state/character_memory/emma.json", sid, {})
     relationship = base.read_json("state/relationship_pairs/akira__emma.json", sid, {})
     assert len(memory["memory_events"]) == 30

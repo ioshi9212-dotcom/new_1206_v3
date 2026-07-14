@@ -17,6 +17,7 @@ from fastapi import Body
 from app import compact as base
 from app import scene_validation
 from app import session_recovery
+from app import start_scene_commit
 
 app = base.app
 RUNTIME_VERSION = base.APP_VERSION
@@ -1873,6 +1874,17 @@ def apply_turn_result_v3(session_id: str, body: dict[str, Any] | None = Body(def
         changed.extend(memory_changed)
         changed.extend(relationship_changed)
         changed = list(dict.fromkeys(changed))
+
+        compatibility_opening_backfilled = start_scene_commit.plan_compatibility_backfill(
+            sid,
+            writes,
+            committed_current,
+            current,
+            state_revision=new_revision,
+            committed_at=datetime.utcnow().isoformat(),
+        )
+        if compatibility_opening_backfilled:
+            changed.append(SCENE_HISTORY_FILE)
 
         if _plan_scene_history(
             sid,

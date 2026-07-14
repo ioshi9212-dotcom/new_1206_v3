@@ -215,7 +215,7 @@ def test_live_openapi_advertises_validation_and_rewrite_loop(client: TestClient)
     apply_schema = schema["paths"]["/api/v1/sessions/{session_id}/apply-turn-result"]["post"]
     request = apply_schema["requestBody"]["content"]["application/json"]["schema"]
 
-    assert schema["info"]["version"] == "0.10.0-v3-quarantine-repair"
+    assert schema["info"]["version"] == "0.11.0-v3-start-scene-commit"
     assert "scene_validation" in request["properties"]
     assert "safety_checks" in request["properties"]
     assert "rewrite" in apply_schema["summary"].lower()
