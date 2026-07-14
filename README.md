@@ -141,3 +141,8 @@ calendar/:
 Персонажи должны читаться из полных карточек `characters/<id>/` и динамической памяти `state/character_memory/<id>.json`.
 
 Не добавлять короткие отдельные summary-файлы вместо полных карточек: они делают поведение персонажей слишком плоским.
+
+
+## Pending validation diagnostics
+
+Ошибка проверки сцены не означает повреждение сессии. Сервер сам считает попытки, хранит точные error codes в `pending_turn.validation_runtime` и возвращает их через `getPreflight` и `getSessionIntegrity`. Игровой ввод, `turn_id` и frozen context сохраняются. Исправление выполняется повторным `applyTurnResult` на том же ходе; `repairSessionState`, reset и удаление pending используются только для настоящего повреждения состояния, а не для невалидного черновика.

@@ -202,7 +202,7 @@ def test_legacy_first_turn_backfills_opening_history(client: TestClient) -> None
 
 def test_openapi_exposes_commit_start_scene(client: TestClient) -> None:
     schema = client.get("/openapi-actions.json").json()
-    assert schema["info"]["version"] == "0.11.0-v3-start-scene-commit"
+    assert schema["info"]["version"] == "0.11.1-v3-pending-validation-diagnostics"
     action = schema["paths"]["/api/v1/sessions/{session_id}/commit-start-scene"]["post"]
     assert action["operationId"] == "commitStartScene"
     request = action["requestBody"]["content"]["application/json"]["schema"]

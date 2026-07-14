@@ -9,7 +9,7 @@ from typing import Any
 from app import compact as base
 from app import session_recovery as recovery
 
-VERSION = "0.11.0-v3-start-scene-commit"
+VERSION = "0.11.1-v3-pending-validation-diagnostics"
 QUARANTINE_SCHEMA = "session_quarantine_v1"
 REPAIR_HISTORY_SCHEMA = "session_repair_history_v1"
 QUARANTINE_DIR = "state/quarantine"
@@ -491,7 +491,7 @@ def integrity_report(session_id: str) -> dict[str, Any]:
             "last_repair_event": repair_entries[-1] if repair_entries else None,
             "quarantine_files": len(quarantine_files),
             "latest_quarantine_file": quarantine_files[-1] if quarantine_files else None,
-            "next_action": "waitForPlayerInput" if healthy else "repairSessionState",
+            "next_action": "repairSessionState" if not healthy else ("getPreflight" if pending else "waitForPlayerInput"),
         })
         return result
 

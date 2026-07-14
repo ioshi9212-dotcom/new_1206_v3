@@ -9,7 +9,7 @@ from typing import Any
 from app import compact as base
 from app import session_recovery
 
-VERSION = "0.11.0-v3-start-scene-commit"
+VERSION = "0.11.1-v3-pending-validation-diagnostics"
 START_SCENE_FILE = "scenes/start_scene.md"
 START_SCENE_ID = "start_scene"
 START_TRANSITION_ID = "start_scene_opening"
