@@ -34,7 +34,12 @@ jobs:
           marker_status=$?
           echo "Authorization marker fix status: $marker_status" >> pending-validation-installer.txt
           python tools/continue_pending_validation_diagnostics.py >> pending-validation-installer.txt 2>&1
-          status=$?
+          continuation_status=$?
+          echo "Continuation status: $continuation_status" >> pending-validation-installer.txt
+          python tools/fix_public_integrity_next_action.py >> pending-validation-installer.txt 2>&1
+          public_status=$?
+          echo "Public integrity fix status: $public_status" >> pending-validation-installer.txt
+          status=$((marker_status || continuation_status || public_status))
           cat pending-validation-installer.txt
           exit $status
       - name: Install dependencies
