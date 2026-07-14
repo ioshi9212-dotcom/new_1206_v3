@@ -1,0 +1,57 @@
+name: Install pending validation diagnostics
+
+on:
+  pull_request:
+    branches:
+      - main
+    types:
+      - opened
+      - synchronize
+
+permissions:
+  contents: write
+
+jobs:
+  install:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/pending-validation-diagnostics
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Integrate pending validation diagnostics
+        run: python tools/install_pending_validation_diagnostics.py
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt pytest httpx
+      - name: Compile runtime and tests
+        run: python -m compileall -q app tests
+      - name: Run focused pending validation tests
+        run: PYTHONPATH=. pytest -q tests/test_pending_validation_diagnostics.py --tb=short
+      - name: Run full regression suite
+        run: |
+          set +e
+          PYTHONPATH=. pytest -q --tb=short > pending-validation-pytest.txt 2>&1
+          status=$?
+          cat pending-validation-pytest.txt
+          exit $status
+      - name: Upload regression diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pending-validation-pytest
+          path: pending-validation-pytest.txt
+          if-no-files-found: warn
+      - name: Commit verified integration
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Persist pending validation diagnostics"
+          git push origin HEAD:agent/pending-validation-diagnostics
