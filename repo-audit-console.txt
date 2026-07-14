@@ -1,0 +1,1166 @@
+/opt/hostedtoolcache/Python/3.12.13/x64/lib/python3.12/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+  from starlette.testclient import TestClient as TestClient  # noqa
+{
+  "hard_errors": [],
+  "warnings": [
+    {
+      "code": "literal_paths_missing",
+      "items": [
+        {
+          "path": "calendar/current_day.yaml",
+          "referenced_by": [
+            "app/director_runtime_patch.py"
+          ]
+        },
+        {
+          "path": "calendar/days/",
+          "referenced_by": [
+            "app/context_request_runtime_patch.py"
+          ]
+        },
+        {
+          "path": "canon_lore/energy.yaml",
+          "referenced_by": [
+            "app/director_runtime_patch.py"
+          ]
+        },
+        {
+          "path": "canon_lore/main.yaml",
+          "referenced_by": [
+            "app/director_runtime_patch.py"
+          ]
+        },
+        {
+          "path": "canon_lore/samuel.yaml",
+          "referenced_by": [
+            "app/director_runtime_patch.py"
+          ]
+        },
+        {
+          "path": "canon_lore/world.yaml",
+          "referenced_by": [
+            "app/director_runtime_patch.py"
+          ]
+        },
+        {
+          "path": "gpt/scene_format.md",
+          "referenced_by": [
+            "app/director_runtime_patch.py"
+          ]
+        },
+        {
+          "path": "gpt/style.md",
+          "referenced_by": [
+            "app/director_runtime_patch.py"
+          ]
+        },
+        {
+          "path": "gpt/writer_rules.md",
+          "referenced_by": [
+            "app/director_runtime_patch.py"
+          ]
+        },
+        {
+          "path": "scenes/1198_academy.md",
+          "referenced_by": [
+            "app/director_runtime_patch.py"
+          ]
+        },
+        {
+          "path": "scenes/1206_start_house.md",
+          "referenced_by": [
+            "app/director_runtime_patch.py"
+          ]
+        },
+        {
+          "path": "scenes/academy_prequel.md",
+          "referenced_by": [
+            "app/director_runtime_patch.py"
+          ]
+        },
+        {
+          "path": "scenes/academy_start.md",
+          "referenced_by": [
+            "app/director_runtime_patch.py"
+          ]
+        },
+        {
+          "path": "scenes/house_jun_start.md",
+          "referenced_by": [
+            "app/director_runtime_patch.py"
+          ]
+        },
+        {
+          "path": "scenes/start_scene.yaml",
+          "referenced_by": [
+            "app/director_runtime_patch.py"
+          ]
+        },
+        {
+          "path": "schedule/current.yaml",
+          "referenced_by": [
+            "app/director_runtime_patch.py"
+          ]
+        },
+        {
+          "path": "state/change_journal.json",
+          "referenced_by": [
+            "app/session_recovery.py"
+          ]
+        },
+        {
+          "path": "state/context_snapshot.json",
+          "referenced_by": [
+            "app/compact.py"
+          ]
+        },
+        {
+          "path": "state/future_locks_progress.json",
+          "referenced_by": [
+            "app/director_runtime_patch.py"
+          ]
+        },
+        {
+          "path": "state/inventory_state.json",
+          "referenced_by": [
+            "app/director_runtime_patch.py",
+            "app/director_runtime_patch.py"
+          ]
+        },
+        {
+          "path": "state/knowledge_state.json",
+          "referenced_by": [
+            "app/director_runtime_patch.py"
+          ]
+        },
+        {
+          "path": "state/last_apply_result.json",
+          "referenced_by": [
+            "app/v3_apply_turn_result_runtime_patch.py",
+            "app/session_recovery.py"
+          ]
+        },
+        {
+          "path": "state/physical_continuity_state.json",
+          "referenced_by": [
+            "app/v3_apply_turn_result_runtime_patch.py"
+          ]
+        },
+        {
+          "path": "state/power_state.json",
+          "referenced_by": [
+            "app/director_runtime_patch.py"
+          ]
+        },
+        {
+          "path": "state/quarantine",
+          "referenced_by": [
+            "app/session_repair.py"
+          ]
+        },
+        {
+          "path": "state/quarantine/",
+          "referenced_by": [
+            "app/session_recovery.py"
+          ]
+        },
+        {
+          "path": "state/recovery_audit.json",
+          "referenced_by": [
+            "app/session_recovery.py",
+            "app/compact.py"
+          ]
+        },
+        {
+          "path": "state/relationship_pairs.json",
+          "referenced_by": [
+            "app/director_runtime_patch.py",
+            "app/director_runtime_patch.py"
+          ]
+        },
+        {
+          "path": "state/relationship_pairs/",
+          "referenced_by": [
+            "app/context_request_runtime_patch.py"
+          ]
+        },
+        {
+          "path": "state/relationships.json",
+          "referenced_by": [
+            "app/director_runtime_patch.py",
+            "app/director_runtime_patch.py"
+          ]
+        },
+        {
+          "path": "state/repair_history.json",
+          "referenced_by": [
+            "app/session_repair.py",
+            "app/session_recovery.py"
+          ]
+        },
+        {
+          "path": "state/revision_snapshots",
+          "referenced_by": [
+            "app/session_recovery.py"
+          ]
+        },
+        {
+          "path": "state/scene_continuity_state.json",
+          "referenced_by": [
+            "app/v3_apply_turn_result_runtime_patch.py"
+          ]
+        },
+        {
+          "path": "state/scene_history.json",
+          "referenced_by": [
+            "app/v3_apply_turn_result_runtime_patch.py",
+            "app/session_recovery.py",
+            "app/v3_full_cards_scene_contract_runtime_patch.py",
+            "app/director_runtime_patch.py",
+            "app/scene_validation.py",
+            "app/compact.py",
+            "app/compact.py",
+            "app/compact.py",
+            "app/compact.py",
+            "app/context_request_runtime_patch.py"
+          ]
+        },
+        {
+          "path": "state/transactions",
+          "referenced_by": [
+            "app/compact.py"
+          ]
+        },
+        {
+          "path": "state/turn_runtime.json",
+          "referenced_by": [
+            "app/compact.py"
+          ]
+        }
+      ]
+    },
+    {
+      "code": "exact_start_scene_not_recorded_in_scene_history",
+      "impact": "The first visible scene is shown before a pending turn exists, so scene_history starts with the first generated reply rather than the canonical opening scene."
+    },
+    {
+      "code": "scene_contract_rules_are_prompt_only_not_deterministically_validated",
+      "missing_checks": [
+        "checks_header_shape",
+        "checks_required_bottom_blocks",
+        "checks_unknown_name_leak",
+        "checks_third_person_style"
+      ]
+    }
+  ],
+  "notes": [],
+  "tree": {
+    "total_files": 190,
+    "top_level_counts": {
+      ".github": 2,
+      ".gitignore": 1,
+      "AGENTS.md": 1,
+      "PROMPT_FOR_CUSTOM_GPT_DIRECTOR_MODE.md": 1,
+      "Procfile": 1,
+      "README.md": 1,
+      "README_ACTIONS_IMPORT_FIX_V2.md": 1,
+      "README_ACTION_SCHEMA_PAYLOAD_FIX_PATCH_1206.md": 1,
+      "README_CONTEXT_SLICE_RUNTIME_PATCH_1206.md": 1,
+      "README_CONTEXT_SLICE_SIZE_GUARD_PATCH_1206.md": 1,
+      "README_DIRECTOR_MODE_STAGE1.md": 1,
+      "README_KNOWLEDGE_BOUNDARY_MAINTENANCE_RENDER_PATCH_1206.md": 1,
+      "README_MAIN_FIX.md": 1,
+      "README_START_SESSION_PATCH_1206.md": 1,
+      "api_contracts": 10,
+      "app": 12,
+      "calendar": 15,
+      "canon_lore": 7,
+      "characters": 48,
+      "gpt": 9,
+      "npcs": 2,
+      "repo-audit-console.txt": 1,
+      "requirements.txt": 1,
+      "scenes": 2,
+      "schedule": 6,
+      "state": 57,
+      "tests": 4,
+      "tools": 1
+    },
+    "extensions": {
+      ".json": 68,
+      ".md": 21,
+      ".py": 17,
+      ".txt": 2,
+      ".yaml": 78,
+      ".yml": 2,
+      "<none>": 2
+    }
+  },
+  "json_validation": {
+    "checked": 68,
+    "invalid": []
+  },
+  "characters": {
+    "directories": 12,
+    "rows": [
+      {
+        "character_id": "akira",
+        "required": {
+          "main.yaml": true,
+          "character.yaml": true,
+          "knowledge.yaml": true
+        },
+        "optional_files": [
+          "past.yaml"
+        ]
+      },
+      {
+        "character_id": "alex",
+        "required": {
+          "main.yaml": true,
+          "character.yaml": true,
+          "knowledge.yaml": true
+        },
+        "optional_files": [
+          "past.yaml"
+        ]
+      },
+      {
+        "character_id": "emma",
+        "required": {
+          "main.yaml": true,
+          "character.yaml": true,
+          "knowledge.yaml": true
+        },
+        "optional_files": [
+          "past.yaml"
+        ]
+      },
+      {
+        "character_id": "haru",
+        "required": {
+          "main.yaml": true,
+          "character.yaml": true,
+          "knowledge.yaml": true
+        },
+        "optional_files": [
+          "past.yaml"
+        ]
+      },
+      {
+        "character_id": "irey",
+        "required": {
+          "main.yaml": true,
+          "character.yaml": true,
+          "knowledge.yaml": true
+        },
+        "optional_files": [
+          "past.yaml"
+        ]
+      },
+      {
+        "character_id": "jun",
+        "required": {
+          "main.yaml": true,
+          "character.yaml": true,
+          "knowledge.yaml": true
+        },
+        "optional_files": [
+          "past.yaml"
+        ]
+      },
+      {
+        "character_id": "kai",
+        "required": {
+          "main.yaml": true,
+          "character.yaml": true,
+          "knowledge.yaml": true
+        },
+        "optional_files": [
+          "past.yaml"
+        ]
+      },
+      {
+        "character_id": "miki",
+        "required": {
+          "main.yaml": true,
+          "character.yaml": true,
+          "knowledge.yaml": true
+        },
+        "optional_files": [
+          "past.yaml"
+        ]
+      },
+      {
+        "character_id": "raiden",
+        "required": {
+          "main.yaml": true,
+          "character.yaml": true,
+          "knowledge.yaml": true
+        },
+        "optional_files": [
+          "past.yaml"
+        ]
+      },
+      {
+        "character_id": "ray",
+        "required": {
+          "main.yaml": true,
+          "character.yaml": true,
+          "knowledge.yaml": true
+        },
+        "optional_files": [
+          "past.yaml"
+        ]
+      },
+      {
+        "character_id": "shiro",
+        "required": {
+          "main.yaml": true,
+          "character.yaml": true,
+          "knowledge.yaml": true
+        },
+        "optional_files": [
+          "past.yaml"
+        ]
+      },
+      {
+        "character_id": "yuna",
+        "required": {
+          "main.yaml": true,
+          "character.yaml": true,
+          "knowledge.yaml": true
+        },
+        "optional_files": [
+          "past.yaml"
+        ]
+      }
+    ],
+    "missing_required_sources": []
+  },
+  "literal_repository_references": {
+    "total": 50,
+    "existing": [
+      "calendar/days/1206-08-31.yaml",
+      "canon_lore/core/01_world_public_history_ru.yaml",
+      "canon_lore/core/02_kairos_public_ru.yaml",
+      "canon_lore/core/03_energy_public_rules_ru.yaml",
+      "gpt/director_mode_rules.md",
+      "gpt/scene_output_contract_1206.json",
+      "scenes/start_scene.md",
+      "scenes/start_scene_logic.md",
+      "state/calendar_runtime.json",
+      "state/context_loading/schedule_availability_rules_1206.json",
+      "state/current_state.json",
+      "state/maintenance_rules_1206.json",
+      "state/relationship_pairs/_index.json",
+      "state/story_lines.json"
+    ],
+    "missing": [
+      {
+        "path": "calendar/current_day.yaml",
+        "referenced_by": [
+          "app/director_runtime_patch.py"
+        ]
+      },
+      {
+        "path": "calendar/days/",
+        "referenced_by": [
+          "app/context_request_runtime_patch.py"
+        ]
+      },
+      {
+        "path": "canon_lore/energy.yaml",
+        "referenced_by": [
+          "app/director_runtime_patch.py"
+        ]
+      },
+      {
+        "path": "canon_lore/main.yaml",
+        "referenced_by": [
+          "app/director_runtime_patch.py"
+        ]
+      },
+      {
+        "path": "canon_lore/samuel.yaml",
+        "referenced_by": [
+          "app/director_runtime_patch.py"
+        ]
+      },
+      {
+        "path": "canon_lore/world.yaml",
+        "referenced_by": [
+          "app/director_runtime_patch.py"
+        ]
+      },
+      {
+        "path": "gpt/scene_format.md",
+        "referenced_by": [
+          "app/director_runtime_patch.py"
+        ]
+      },
+      {
+        "path": "gpt/style.md",
+        "referenced_by": [
+          "app/director_runtime_patch.py"
+        ]
+      },
+      {
+        "path": "gpt/writer_rules.md",
+        "referenced_by": [
+          "app/director_runtime_patch.py"
+        ]
+      },
+      {
+        "path": "scenes/1198_academy.md",
+        "referenced_by": [
+          "app/director_runtime_patch.py"
+        ]
+      },
+      {
+        "path": "scenes/1206_start_house.md",
+        "referenced_by": [
+          "app/director_runtime_patch.py"
+        ]
+      },
+      {
+        "path": "scenes/academy_prequel.md",
+        "referenced_by": [
+          "app/director_runtime_patch.py"
+        ]
+      },
+      {
+        "path": "scenes/academy_start.md",
+        "referenced_by": [
+          "app/director_runtime_patch.py"
+        ]
+      },
+      {
+        "path": "scenes/house_jun_start.md",
+        "referenced_by": [
+          "app/director_runtime_patch.py"
+        ]
+      },
+      {
+        "path": "scenes/start_scene.yaml",
+        "referenced_by": [
+          "app/director_runtime_patch.py"
+        ]
+      },
+      {
+        "path": "schedule/current.yaml",
+        "referenced_by": [
+          "app/director_runtime_patch.py"
+        ]
+      },
+      {
+        "path": "state/change_journal.json",
+        "referenced_by": [
+          "app/session_recovery.py"
+        ]
+      },
+      {
+        "path": "state/context_snapshot.json",
+        "referenced_by": [
+          "app/compact.py"
+        ]
+      },
+      {
+        "path": "state/future_locks_progress.json",
+        "referenced_by": [
+          "app/director_runtime_patch.py"
+        ]
+      },
+      {
+        "path": "state/inventory_state.json",
+        "referenced_by": [
+          "app/director_runtime_patch.py",
+          "app/director_runtime_patch.py"
+        ]
+      },
+      {
+        "path": "state/knowledge_state.json",
+        "referenced_by": [
+          "app/director_runtime_patch.py"
+        ]
+      },
+      {
+        "path": "state/last_apply_result.json",
+        "referenced_by": [
+          "app/v3_apply_turn_result_runtime_patch.py",
+          "app/session_recovery.py"
+        ]
+      },
+      {
+        "path": "state/physical_continuity_state.json",
+        "referenced_by": [
+          "app/v3_apply_turn_result_runtime_patch.py"
+        ]
+      },
+      {
+        "path": "state/power_state.json",
+        "referenced_by": [
+          "app/director_runtime_patch.py"
+        ]
+      },
+      {
+        "path": "state/quarantine",
+        "referenced_by": [
+          "app/session_repair.py"
+        ]
+      },
+      {
+        "path": "state/quarantine/",
+        "referenced_by": [
+          "app/session_recovery.py"
+        ]
+      },
+      {
+        "path": "state/recovery_audit.json",
+        "referenced_by": [
+          "app/session_recovery.py",
+          "app/compact.py"
+        ]
+      },
+      {
+        "path": "state/relationship_pairs.json",
+        "referenced_by": [
+          "app/director_runtime_patch.py",
+          "app/director_runtime_patch.py"
+        ]
+      },
+      {
+        "path": "state/relationship_pairs/",
+        "referenced_by": [
+          "app/context_request_runtime_patch.py"
+        ]
+      },
+      {
+        "path": "state/relationships.json",
+        "referenced_by": [
+          "app/director_runtime_patch.py",
+          "app/director_runtime_patch.py"
+        ]
+      },
+      {
+        "path": "state/repair_history.json",
+        "referenced_by": [
+          "app/session_repair.py",
+          "app/session_recovery.py"
+        ]
+      },
+      {
+        "path": "state/revision_snapshots",
+        "referenced_by": [
+          "app/session_recovery.py"
+        ]
+      },
+      {
+        "path": "state/scene_continuity_state.json",
+        "referenced_by": [
+          "app/v3_apply_turn_result_runtime_patch.py"
+        ]
+      },
+      {
+        "path": "state/scene_history.json",
+        "referenced_by": [
+          "app/v3_apply_turn_result_runtime_patch.py",
+          "app/session_recovery.py",
+          "app/v3_full_cards_scene_contract_runtime_patch.py",
+          "app/director_runtime_patch.py",
+          "app/scene_validation.py",
+          "app/compact.py",
+          "app/compact.py",
+          "app/compact.py",
+          "app/compact.py",
+          "app/context_request_runtime_patch.py"
+        ]
+      },
+      {
+        "path": "state/transactions",
+        "referenced_by": [
+          "app/compact.py"
+        ]
+      },
+      {
+        "path": "state/turn_runtime.json",
+        "referenced_by": [
+          "app/compact.py"
+        ]
+      }
+    ]
+  },
+  "relationship_index": {
+    "exists": true,
+    "referenced_pair_files": [
+      "state/relationship_pairs/akira__alex.json",
+      "state/relationship_pairs/akira__emma.json",
+      "state/relationship_pairs/akira__haru.json",
+      "state/relationship_pairs/akira__irey.json",
+      "state/relationship_pairs/akira__jun.json",
+      "state/relationship_pairs/akira__miki.json",
+      "state/relationship_pairs/akira__raiden.json",
+      "state/relationship_pairs/akira__ray.json",
+      "state/relationship_pairs/akira__shiro.json",
+      "state/relationship_pairs/akira__yuna.json",
+      "state/relationship_pairs/jun__emma.json",
+      "state/relationship_pairs/jun__irey.json",
+      "state/relationship_pairs/jun__ray.json",
+      "state/relationship_pairs/miki__alex.json",
+      "state/relationship_pairs/raiden__haru.json",
+      "state/relationship_pairs/ray__yuna.json"
+    ],
+    "missing_pair_files": []
+  },
+  "calendar": {
+    "runtime_exists": true,
+    "current_day_file": "calendar/days/1206-08-31.yaml",
+    "current_day_exists": true,
+    "pending_events": 4,
+    "npc_autonomy_characters": [
+      "akira",
+      "alex",
+      "emma",
+      "haru",
+      "irey",
+      "jun",
+      "kai",
+      "miki",
+      "raiden",
+      "ray",
+      "shiro",
+      "yuna"
+    ]
+  },
+  "deployment": {
+    "requirements.txt": true,
+    "Procfile": true,
+    "railway.toml": false,
+    "Dockerfile": false,
+    "runtime.txt": false
+  },
+  "routes": {
+    "count": 31,
+    "duplicates": [],
+    "rows": [
+      {
+        "path": "/openapi.json",
+        "methods": [
+          "GET",
+          "HEAD"
+        ],
+        "operation_id": null
+      },
+      {
+        "path": "/docs",
+        "methods": [
+          "GET",
+          "HEAD"
+        ],
+        "operation_id": null
+      },
+      {
+        "path": "/docs/oauth2-redirect",
+        "methods": [
+          "GET",
+          "HEAD"
+        ],
+        "operation_id": null
+      },
+      {
+        "path": "/redoc",
+        "methods": [
+          "GET",
+          "HEAD"
+        ],
+        "operation_id": null
+      },
+      {
+        "path": "/api/v3/sessions/{session_id}/preflight",
+        "methods": [
+          "GET"
+        ],
+        "operation_id": "getPreflight"
+      },
+      {
+        "path": "/api/v3/sessions/{session_id}/turn-contract",
+        "methods": [
+          "POST"
+        ],
+        "operation_id": "getTurnContract"
+      },
+      {
+        "path": "/api/v3/sessions/{session_id}/required-context/manifest",
+        "methods": [
+          "POST"
+        ],
+        "operation_id": "getRequiredContextManifest"
+      },
+      {
+        "path": "/api/v3/sessions/{session_id}/required-context/chunk",
+        "methods": [
+          "POST"
+        ],
+        "operation_id": "getRequiredContextChunk"
+      },
+      {
+        "path": "/api/v3/sessions/{session_id}/context-request",
+        "methods": [
+          "POST"
+        ],
+        "operation_id": "requestContextSlice"
+      },
+      {
+        "path": "/api/v3/sessions/{session_id}/context-more",
+        "methods": [
+          "POST"
+        ],
+        "operation_id": "requestMoreContext"
+      },
+      {
+        "path": "/api/v3/sessions/{session_id}/start-scene-text",
+        "methods": [
+          "GET"
+        ],
+        "operation_id": "getStartSceneText"
+      },
+      {
+        "path": "/api/v2/sessions/{session_id}/scene-contract",
+        "methods": [
+          "GET"
+        ],
+        "operation_id": "getSceneContract"
+      },
+      {
+        "path": "/api/v2/sessions/{session_id}/turn-packet",
+        "methods": [
+          "GET"
+        ],
+        "operation_id": "getTurnPacket"
+      },
+      {
+        "path": "/api/v2/sessions/{session_id}/debug/context-audit",
+        "methods": [
+          "GET"
+        ],
+        "operation_id": "getContextAudit"
+      },
+      {
+        "path": "/api/v1/sessions/{session_id}/apply-turn-result",
+        "methods": [
+          "POST"
+        ],
+        "operation_id": "applyTurnResult"
+      },
+      {
+        "path": "/",
+        "methods": [
+          "GET"
+        ],
+        "operation_id": null
+      },
+      {
+        "path": "/health",
+        "methods": [
+          "GET"
+        ],
+        "operation_id": "health"
+      },
+      {
+        "path": "/api/v1/sessions/{session_id}/integrity",
+        "methods": [
+          "GET"
+        ],
+        "operation_id": "getSessionIntegrity"
+      },
+      {
+        "path": "/api/v1/sessions/{session_id}/rollback-last-turn",
+        "methods": [
+          "POST"
+        ],
+        "operation_id": "rollbackLastTurn"
+      },
+      {
+        "path": "/api/v1/sessions/{session_id}/repair-state",
+        "methods": [
+          "POST"
+        ],
+        "operation_id": "repairSessionState"
+      },
+      {
+        "path": "/api/v1/sessions",
+        "methods": [
+          "POST"
+        ],
+        "operation_id": "createSession"
+      },
+      {
+        "path": "/api/v1/start",
+        "methods": [
+          "POST"
+        ],
+        "operation_id": "startSession"
+      },
+      {
+        "path": "/api/v1/sessions/{session_id}/turn",
+        "methods": [
+          "POST"
+        ],
+        "operation_id": "processTurn"
+      },
+      {
+        "path": "/openapi-actions.json",
+        "methods": [
+          "GET"
+        ],
+        "operation_id": null
+      },
+      {
+        "path": "/api/director/drafts/start",
+        "methods": [
+          "POST"
+        ],
+        "operation_id": "startDirectorDraft"
+      },
+      {
+        "path": "/api/director/drafts/{draft_id}/context/add",
+        "methods": [
+          "POST"
+        ],
+        "operation_id": "addDirectorContext"
+      },
+      {
+        "path": "/api/director/drafts/{draft_id}/rewrite",
+        "methods": [
+          "POST"
+        ],
+        "operation_id": "rewriteDirectorDraft"
+      },
+      {
+        "path": "/api/director/drafts/{draft_id}/save",
+        "methods": [
+          "POST"
+        ],
+        "operation_id": "saveDirectorDraft"
+      },
+      {
+        "path": "/api/director/drafts/{draft_id}/validate",
+        "methods": [
+          "POST"
+        ],
+        "operation_id": "validateDirectorDraft"
+      },
+      {
+        "path": "/api/director/drafts/{draft_id}",
+        "methods": [
+          "GET"
+        ],
+        "operation_id": "getDirectorDraft"
+      },
+      {
+        "path": "/openapi-director-actions.json",
+        "methods": [
+          "GET"
+        ],
+        "operation_id": null
+      }
+    ]
+  },
+  "openapi": {
+    "live_version": "0.10.0-v3-quarantine-repair",
+    "live_operations": [
+      "applyTurnResult",
+      "createSession",
+      "getPreflight",
+      "getRequiredContextChunk",
+      "getRequiredContextManifest",
+      "getSessionIntegrity",
+      "getStartSceneText",
+      "getTurnContract",
+      "health",
+      "processTurn",
+      "repairSessionState",
+      "requestContextSlice",
+      "requestMoreContext",
+      "rollbackLastTurn",
+      "startSession"
+    ],
+    "missing_live_operations": [],
+    "director_version": "0.10.0-v3-quarantine-repair+director-stage1",
+    "director_operations": [
+      "addDirectorContext",
+      "getDirectorDraft",
+      "rewriteDirectorDraft",
+      "saveDirectorDraft",
+      "startDirectorDraft",
+      "validateDirectorDraft"
+    ],
+    "missing_director_operations": [],
+    "operation_overlap": []
+  },
+  "runtime_character_source_matrix": {
+    "akira": {
+      "main.yaml": true,
+      "character.yaml": true,
+      "knowledge.yaml": true
+    },
+    "alex": {
+      "main.yaml": true,
+      "character.yaml": true,
+      "knowledge.yaml": true
+    },
+    "emma": {
+      "main.yaml": true,
+      "character.yaml": true,
+      "knowledge.yaml": true
+    },
+    "haru": {
+      "main.yaml": true,
+      "character.yaml": true,
+      "knowledge.yaml": true
+    },
+    "irey": {
+      "main.yaml": true,
+      "character.yaml": true,
+      "knowledge.yaml": true
+    },
+    "jun": {
+      "main.yaml": true,
+      "character.yaml": true,
+      "knowledge.yaml": true
+    },
+    "kai": {
+      "main.yaml": true,
+      "character.yaml": true,
+      "knowledge.yaml": true
+    },
+    "miki": {
+      "main.yaml": true,
+      "character.yaml": true,
+      "knowledge.yaml": true
+    },
+    "raiden": {
+      "main.yaml": true,
+      "character.yaml": true,
+      "knowledge.yaml": true
+    },
+    "ray": {
+      "main.yaml": true,
+      "character.yaml": true,
+      "knowledge.yaml": true
+    },
+    "shiro": {
+      "main.yaml": true,
+      "character.yaml": true,
+      "knowledge.yaml": true
+    },
+    "yuna": {
+      "main.yaml": true,
+      "character.yaml": true,
+      "knowledge.yaml": true
+    }
+  },
+  "live_flow_probe": {
+    "start_success": true,
+    "preflight_next_action": "getStartSceneText",
+    "start_scene_exact_required": true,
+    "start_scene_chars": 3309,
+    "process_turn_success": true,
+    "contract_success": true,
+    "contract_character_ids": [
+      "akira",
+      "jun",
+      "irey",
+      "emma"
+    ],
+    "contract_character_source_audit": {
+      "akira": {
+        "character_id": "akira",
+        "valid": true,
+        "required_sources": [
+          "characters/akira/main.yaml",
+          "characters/akira/character.yaml",
+          "characters/akira/knowledge.yaml"
+        ],
+        "dynamic_memory_source": "state/character_memory/akira.json",
+        "missing_sources": []
+      },
+      "jun": {
+        "character_id": "jun",
+        "valid": true,
+        "required_sources": [
+          "characters/jun/main.yaml",
+          "characters/jun/character.yaml",
+          "characters/jun/knowledge.yaml"
+        ],
+        "dynamic_memory_source": "state/character_memory/jun.json",
+        "missing_sources": []
+      },
+      "irey": {
+        "character_id": "irey",
+        "valid": true,
+        "required_sources": [
+          "characters/irey/main.yaml",
+          "characters/irey/character.yaml",
+          "characters/irey/knowledge.yaml"
+        ],
+        "dynamic_memory_source": "state/character_memory/irey.json",
+        "missing_sources": []
+      },
+      "emma": {
+        "character_id": "emma",
+        "valid": true,
+        "required_sources": [
+          "characters/emma/main.yaml",
+          "characters/emma/character.yaml",
+          "characters/emma/knowledge.yaml"
+        ],
+        "dynamic_memory_source": "state/character_memory/emma.json",
+        "missing_sources": []
+      }
+    },
+    "total_chunks": 5,
+    "chunk_types": [
+      "characters_core",
+      "knowledge_boundaries",
+      "state_relationships_memory",
+      "location_inventory_calendar_render",
+      "world_lore_minimal"
+    ],
+    "all_chunks_success": true,
+    "last_chunk_all_served": true,
+    "render_contract_present": true,
+    "apply_instruction_present": true,
+    "apply_status": "applied",
+    "apply_visible_allowed": true,
+    "history_entries_after_first_player_turn": 1,
+    "exact_start_scene_recorded_in_history": false,
+    "start_scene_completed_after_apply": true,
+    "integrity_after_apply": "healthy"
+  },
+  "scene_output_contract": {
+    "version": "v5_time_autonomy_akira_micro_agency",
+    "header_required": true,
+    "dialogue_format": "**Имя** — реплика.",
+    "bottom_blocks_order": [
+      "✦ Что можно сделать",
+      "✦ Что Акира могла бы сказать",
+      "✦ Мысли Акиры",
+      "✦ Состояние",
+      "✦ Риск",
+      "✦ Отношения"
+    ],
+    "prose_rules_count": 10
+  },
+  "deterministic_scene_validation_coverage": {
+    "checks_internal_json": true,
+    "checks_unloaded_speaker": true,
+    "checks_repetition": true,
+    "checks_major_pov_choice": true,
+    "checks_non_pov_akira_choice": true,
+    "checks_header_shape": false,
+    "checks_required_bottom_blocks": false,
+    "checks_unknown_name_leak": false,
+    "checks_third_person_style": false
+  }
+}
