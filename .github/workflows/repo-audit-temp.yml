@@ -1,0 +1,70 @@
+name: Temporary full repository audit
+
+on:
+  push:
+    branches:
+      - agent/repo-audit-temp
+
+permissions:
+  contents: write
+
+jobs:
+  audit:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/repo-audit-temp
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt pytest httpx
+      - name: Run repository audit
+        run: |
+          set +e
+          PYTHONPATH=. python tools/repo_audit_temp.py > repo-audit-console.txt 2>&1
+          status=$?
+          cat repo-audit-console.txt
+          echo "$status" > repo-audit-status.txt
+          exit 0
+      - name: Run full regression suite
+        run: |
+          set +e
+          PYTHONPATH=. pytest -q --tb=short > repo-audit-pytest.txt 2>&1
+          status=$?
+          cat repo-audit-pytest.txt
+          echo "$status" > repo-pytest-status.txt
+          exit 0
+      - name: Upload audit report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: full-repository-audit
+          path: |
+            repo-audit-report.json
+            repo-audit-console.txt
+            repo-audit-status.txt
+            repo-audit-pytest.txt
+            repo-pytest-status.txt
+          if-no-files-found: error
+      - name: Remove temporary audit files
+        if: always()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          rm -f tools/repo_audit_temp.py .github/workflows/repo-audit-temp.yml
+          git add -A
+          git commit -m "Remove temporary repository audit"
+          git push origin HEAD:agent/repo-audit-temp
+      - name: Preserve audit status
+        if: always()
+        run: |
+          audit_status=$(cat repo-audit-status.txt 2>/dev/null || echo 1)
+          pytest_status=$(cat repo-pytest-status.txt 2>/dev/null || echo 1)
+          test "$audit_status" = "0" -a "$pytest_status" = "0"
