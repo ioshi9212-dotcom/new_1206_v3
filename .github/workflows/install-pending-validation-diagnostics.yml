@@ -30,6 +30,9 @@ jobs:
           python tools/install_pending_validation_diagnostics.py > pending-validation-installer.txt 2>&1
           first_status=$?
           echo "Initial installer status: $first_status" >> pending-validation-installer.txt
+          python tools/fix_authorization_markers.py >> pending-validation-installer.txt 2>&1
+          marker_status=$?
+          echo "Authorization marker fix status: $marker_status" >> pending-validation-installer.txt
           python tools/continue_pending_validation_diagnostics.py >> pending-validation-installer.txt 2>&1
           status=$?
           cat pending-validation-installer.txt
