@@ -9,7 +9,7 @@ from typing import Any
 from app import compact as base
 from app import session_recovery as recovery
 
-VERSION = "0.10.0-v3-quarantine-repair"
+VERSION = "0.11.0-v3-start-scene-commit"
 QUARANTINE_SCHEMA = "session_quarantine_v1"
 REPAIR_HISTORY_SCHEMA = "session_repair_history_v1"
 QUARANTINE_DIR = "state/quarantine"

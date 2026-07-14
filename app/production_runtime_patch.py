@@ -20,6 +20,7 @@ from fastapi import Body
 from app import compact as base
 from app import session_recovery
 from app import session_repair
+from app import start_scene_commit
 from app.compact import app
 
 # Register the transactional writer, then the one active context builder.
@@ -215,6 +216,7 @@ def health() -> dict[str, Any]:
         "automatic_recovery_audit": "prepared_write_and_delete_replay_with_persistent_log",
         "quarantine_repair_protocol": "explicit_confirm_revision_guard_full_forensic_quarantine",
         "trusted_snapshot_protocol": "full_before_and_after_state_images_with_self_hash",
+        "start_scene_protocol": "canonical_hash_revision_guard_atomic_commit_before_visible_output",
         "large_contract_actions_disabled": True,
     }
 
@@ -283,6 +285,14 @@ def start_session(body: dict[str, Any] | None = Body(default=None)) -> dict[str,
     return create_session(payload)
 
 
+@app.post("/api/v1/sessions/{session_id}/commit-start-scene", operation_id="commitStartScene")
+def commit_start_scene(
+    session_id: str,
+    body: dict[str, Any] | None = Body(default=None),
+) -> dict[str, Any]:
+    return start_scene_commit.commit_start_scene(session_id, body)
+
+
 @app.post("/api/v1/sessions/{session_id}/turn", operation_id="processTurn")
 def process_turn(session_id: str, body: dict[str, Any] | None = Body(default=None)) -> dict[str, Any]:
     """Protect one player input as a pending transaction and return its id.
@@ -315,7 +325,13 @@ def process_turn(session_id: str, body: dict[str, Any] | None = Body(default=Non
             "start_command_detected": True,
             "current_frame": _current_frame_ack(current_state),
             "next_action": "getPreflight",
-            "required_sequence": ["getPreflight", "getStartSceneText", "show exact_text", "waitForPlayerInput"],
+            "required_sequence": [
+                "getPreflight",
+                "getStartSceneText",
+                "commitStartScene with state_revision and exact_text_sha256",
+                "show commitStartScene.visible_scene_text exactly once",
+                "waitForPlayerInput",
+            ],
         }
 
     if not player_input:
@@ -394,6 +410,10 @@ def openapi_actions() -> dict[str, Any]:
         "reset": {"type": "boolean"},
         "current_state": object_any,
     })
+    commit_start_scene_body_schema = _object_schema({
+        "expected_state_revision": {"type": "integer", "description": "Exact state_revision returned by getStartSceneText."},
+        "exact_text_sha256": {"type": "string", "description": "Canonical opening hash returned by getStartSceneText."},
+    }, required=["expected_state_revision", "exact_text_sha256"])
     process_turn_body_schema = _object_schema({
         "player_input": {"type": "string", "description": "Exact latest player message/action/reply. Required for normal turns after the start scene."},
         "user_input": {"type": "string", "description": "Alias for player_input."},
@@ -542,7 +562,7 @@ def openapi_actions() -> dict[str, Any]:
         "info": {
             "title": "Akira 1206 v3 Actions",
             "version": RUNTIME_VERSION,
-            "description": "Transactional API: applyTurnResult commits the scene with full trusted before/after state images. getSessionIntegrity detects revision, hash and JSON damage. repairSessionState requires explicit confirmation and the exact revision, preserves the damaged state in quarantine, then restores a trusted snapshot under a new monotonic revision. Legacy fallback never loses a turn without allow_turn_loss=true.",
+            "description": "Transactional API: getStartSceneText returns the canonical opening and hash; commitStartScene atomically records it before visible output. Normal turns then use one protected turn_id, frozen ordered context chunks, precommit validation and atomic apply. Integrity, rollback and quarantine repair remain revision-guarded.",
         },
         "servers": [{"url": base.BASE_URL.rstrip("/")}],
         "paths": {
@@ -554,6 +574,9 @@ def openapi_actions() -> dict[str, Any]:
             },
             "/api/v1/sessions": {
                 "post": {"operationId": "createSession", "summary": "Create or ensure a session; returns only a light ack.", "requestBody": {"required": False, "content": {"application/json": {"schema": create_session_body_schema}}}, "responses": {"200": _response("Light session ack")}}
+            },
+            "/api/v1/sessions/{session_id}/commit-start-scene": {
+                "post": {"operationId": "commitStartScene", "summary": "Atomically commit the exact canonical opening before showing it to the player.", "parameters": [_session_path_param()], "requestBody": {"required": True, "content": {"application/json": {"schema": commit_start_scene_body_schema}}}, "responses": {"200": _response("Committed opening scene")}}
             },
             "/api/v1/sessions/{session_id}/turn": {
                 "post": {"operationId": "processTurn", "summary": "Protect one player input and return its turn_id. Never overwrite a different pending turn.", "parameters": [_session_path_param()], "requestBody": {"required": True, "content": {"application/json": {"schema": process_turn_body_schema}}}, "responses": {"200": _response("Transactional turn ack")}}

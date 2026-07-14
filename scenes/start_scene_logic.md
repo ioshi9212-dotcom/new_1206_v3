@@ -89,5 +89,4 @@
 
 ## Правило exact first output
 
-Если `current_state.start_scene_exact_text_required = true`, ChatGPT должен вывести текст из `scene_contract.start_scene.exact_text`, а не писать новую версию сцены.
-После вывода сцены API должен получить `applyTurnResult`, чтобы отметить сыгранный первый вывод и сохранить видимый текст в историю.
+Если `current_state.start_scene_exact_text_required = true`, ChatGPT получает точный текст через `getStartSceneText`, но ещё не показывает его. Затем вызывает `commitStartScene` с возвращёнными `state_revision` и `exact_text_sha256`. Только ответ `status: start_scene_committed` разрешает показать возвращённый `visible_scene_text` один раз. Opening сохраняется в историю отдельной ревизией и не проходит через обычный `pending_turn`.
