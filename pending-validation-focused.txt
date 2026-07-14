@@ -1,0 +1,102 @@
+...                                                                      [100%]
+=============================== warnings summary ===============================
+../../../../../opt/hostedtoolcache/Python/3.12.13/x64/lib/python3.12/site-packages/fastapi/testclient.py:1
+  /opt/hostedtoolcache/Python/3.12.13/x64/lib/python3.12/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+tests/test_pending_validation_diagnostics.py::test_server_owns_attempt_counter_and_diagnostics_survive_preflight
+tests/test_pending_validation_diagnostics.py::test_server_owns_attempt_counter_and_diagnostics_survive_preflight
+tests/test_pending_validation_diagnostics.py::test_retry_limit_is_server_counted_but_pending_turn_is_never_discarded
+tests/test_pending_validation_diagnostics.py::test_retry_limit_is_server_counted_but_pending_turn_is_never_discarded
+tests/test_pending_validation_diagnostics.py::test_state_patch_failure_is_persisted_and_valid_retry_commits_same_turn
+tests/test_pending_validation_diagnostics.py::test_state_patch_failure_is_persisted_and_valid_retry_commits_same_turn
+  /home/runner/work/new_1206_v3/new_1206_v3/app/compact.py:118: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    "created_at": datetime.utcnow().isoformat(),
+
+tests/test_pending_validation_diagnostics.py::test_server_owns_attempt_counter_and_diagnostics_survive_preflight
+tests/test_pending_validation_diagnostics.py::test_server_owns_attempt_counter_and_diagnostics_survive_preflight
+tests/test_pending_validation_diagnostics.py::test_retry_limit_is_server_counted_but_pending_turn_is_never_discarded
+tests/test_pending_validation_diagnostics.py::test_retry_limit_is_server_counted_but_pending_turn_is_never_discarded
+tests/test_pending_validation_diagnostics.py::test_state_patch_failure_is_persisted_and_valid_retry_commits_same_turn
+tests/test_pending_validation_diagnostics.py::test_state_patch_failure_is_persisted_and_valid_retry_commits_same_turn
+  /home/runner/work/new_1206_v3/new_1206_v3/app/compact.py:119: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    "updated_at": datetime.utcnow().isoformat(),
+
+tests/test_pending_validation_diagnostics.py::test_server_owns_attempt_counter_and_diagnostics_survive_preflight
+tests/test_pending_validation_diagnostics.py::test_retry_limit_is_server_counted_but_pending_turn_is_never_discarded
+tests/test_pending_validation_diagnostics.py::test_state_patch_failure_is_persisted_and_valid_retry_commits_same_turn
+  /home/runner/work/new_1206_v3/new_1206_v3/app/compact.py:575: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    now = datetime.utcnow().isoformat()
+
+tests/test_pending_validation_diagnostics.py::test_server_owns_attempt_counter_and_diagnostics_survive_preflight
+tests/test_pending_validation_diagnostics.py::test_retry_limit_is_server_counted_but_pending_turn_is_never_discarded
+tests/test_pending_validation_diagnostics.py::test_state_patch_failure_is_persisted_and_valid_retry_commits_same_turn
+  /home/runner/work/new_1206_v3/new_1206_v3/app/compact.py:664: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    current["updated_at"] = datetime.utcnow().isoformat()
+
+tests/test_pending_validation_diagnostics.py::test_server_owns_attempt_counter_and_diagnostics_survive_preflight
+tests/test_pending_validation_diagnostics.py::test_retry_limit_is_server_counted_but_pending_turn_is_never_discarded
+tests/test_pending_validation_diagnostics.py::test_state_patch_failure_is_persisted_and_valid_retry_commits_same_turn
+  /home/runner/work/new_1206_v3/new_1206_v3/app/compact.py:348: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    "updated_at": datetime.utcnow().isoformat(),
+
+tests/test_pending_validation_diagnostics.py::test_server_owns_attempt_counter_and_diagnostics_survive_preflight
+tests/test_pending_validation_diagnostics.py::test_retry_limit_is_server_counted_but_pending_turn_is_never_discarded
+tests/test_pending_validation_diagnostics.py::test_state_patch_failure_is_persisted_and_valid_retry_commits_same_turn
+  /home/runner/work/new_1206_v3/new_1206_v3/app/compact.py:52: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    return safe_session_id(f"{prefix}_{datetime.utcnow().strftime('%Y%m%d_%H%M%S_%f')}")
+
+tests/test_pending_validation_diagnostics.py::test_server_owns_attempt_counter_and_diagnostics_survive_preflight
+tests/test_pending_validation_diagnostics.py::test_server_owns_attempt_counter_and_diagnostics_survive_preflight
+tests/test_pending_validation_diagnostics.py::test_retry_limit_is_server_counted_but_pending_turn_is_never_discarded
+tests/test_pending_validation_diagnostics.py::test_retry_limit_is_server_counted_but_pending_turn_is_never_discarded
+tests/test_pending_validation_diagnostics.py::test_state_patch_failure_is_persisted_and_valid_retry_commits_same_turn
+tests/test_pending_validation_diagnostics.py::test_state_patch_failure_is_persisted_and_valid_retry_commits_same_turn
+tests/test_pending_validation_diagnostics.py::test_state_patch_failure_is_persisted_and_valid_retry_commits_same_turn
+  /home/runner/work/new_1206_v3/new_1206_v3/app/compact.py:249: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    "prepared_at": datetime.utcnow().isoformat(),
+
+tests/test_pending_validation_diagnostics.py::test_server_owns_attempt_counter_and_diagnostics_survive_preflight
+tests/test_pending_validation_diagnostics.py::test_server_owns_attempt_counter_and_diagnostics_survive_preflight
+tests/test_pending_validation_diagnostics.py::test_retry_limit_is_server_counted_but_pending_turn_is_never_discarded
+tests/test_pending_validation_diagnostics.py::test_retry_limit_is_server_counted_but_pending_turn_is_never_discarded
+tests/test_pending_validation_diagnostics.py::test_state_patch_failure_is_persisted_and_valid_retry_commits_same_turn
+tests/test_pending_validation_diagnostics.py::test_state_patch_failure_is_persisted_and_valid_retry_commits_same_turn
+tests/test_pending_validation_diagnostics.py::test_state_patch_failure_is_persisted_and_valid_retry_commits_same_turn
+  /home/runner/work/new_1206_v3/new_1206_v3/app/compact.py:259: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    journal["committed_at"] = datetime.utcnow().isoformat()
+
+tests/test_pending_validation_diagnostics.py::test_server_owns_attempt_counter_and_diagnostics_survive_preflight
+tests/test_pending_validation_diagnostics.py::test_retry_limit_is_server_counted_but_pending_turn_is_never_discarded
+tests/test_pending_validation_diagnostics.py::test_state_patch_failure_is_persisted_and_valid_retry_commits_same_turn
+  /home/runner/work/new_1206_v3/new_1206_v3/app/production_runtime_patch.py:275: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    "created_at": datetime.utcnow().isoformat(),
+
+tests/test_pending_validation_diagnostics.py::test_server_owns_attempt_counter_and_diagnostics_survive_preflight
+tests/test_pending_validation_diagnostics.py::test_retry_limit_is_server_counted_but_pending_turn_is_never_discarded
+tests/test_pending_validation_diagnostics.py::test_state_patch_failure_is_persisted_and_valid_retry_commits_same_turn
+  /home/runner/work/new_1206_v3/new_1206_v3/app/production_runtime_patch.py:161: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    created_at = datetime.utcnow().isoformat()
+
+tests/test_pending_validation_diagnostics.py::test_state_patch_failure_is_persisted_and_valid_retry_commits_same_turn
+  /home/runner/work/new_1206_v3/new_1206_v3/app/v3_apply_turn_result_runtime_patch.py:1888: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    current["updated_at"] = datetime.utcnow().isoformat()
+
+tests/test_pending_validation_diagnostics.py::test_state_patch_failure_is_persisted_and_valid_retry_commits_same_turn
+  /home/runner/work/new_1206_v3/new_1206_v3/app/v3_apply_turn_result_runtime_patch.py:1943: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    committed_at=datetime.utcnow().isoformat(),
+
+tests/test_pending_validation_diagnostics.py::test_state_patch_failure_is_persisted_and_valid_retry_commits_same_turn
+  /home/runner/work/new_1206_v3/new_1206_v3/app/v3_apply_turn_result_runtime_patch.py:1690: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    "created_at": datetime.utcnow().isoformat(),
+
+tests/test_pending_validation_diagnostics.py::test_state_patch_failure_is_persisted_and_valid_retry_commits_same_turn
+  /home/runner/work/new_1206_v3/new_1206_v3/app/v3_apply_turn_result_runtime_patch.py:167: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    state["last_checked_at"] = datetime.utcnow().isoformat()
+
+tests/test_pending_validation_diagnostics.py::test_state_patch_failure_is_persisted_and_valid_retry_commits_same_turn
+  /home/runner/work/new_1206_v3/new_1206_v3/app/v3_apply_turn_result_runtime_patch.py:1986: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    applied_at = datetime.utcnow().isoformat()
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+3 passed, 50 warnings in 1.07s

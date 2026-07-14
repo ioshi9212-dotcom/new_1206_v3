@@ -176,6 +176,12 @@ def _begin_pending_turn(
             "current_state_patch": state_patch,
             "time_intent": time_intent if isinstance(time_intent, dict) else {},
             "created_at": created_at,
+            "validation_runtime": {
+                "schema": "pending_validation_runtime_v1",
+                "attempts": 0,
+                "failure_history": [],
+                "last_failure": None,
+            },
         }
         runtime["pending_turn"] = pending
         runtime["next_turn_number"] = turn_number + 1
@@ -207,6 +213,7 @@ def health() -> dict[str, Any]:
         "character_state_protocol": "evidence_sourced_memory_and_snapshot_scoped_relationships",
         "player_character_protocol": "current_pov_protected_nonpov_akira_low_stakes_micro_agency",
         "scene_validation_protocol": "precommit_scene_gate_frozen_snapshot_rewrite_v1",
+        "pending_validation_diagnostics": "server_owned_attempt_counter_persisted_error_codes_same_turn_recovery",
         "automatic_scene_rewrite_attempts": 3,
         "world_time_protocol": "monotonic_evidence_backed_clock_and_current_day_only_calendar",
         "npc_autonomy_protocol": "offscreen_activity_location_availability_eta_and_missed_event_consequences",

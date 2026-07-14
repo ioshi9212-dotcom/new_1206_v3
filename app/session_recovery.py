@@ -8,8 +8,9 @@ from pathlib import Path
 from typing import Any
 
 from app import compact as base
+from app import scene_validation
 
-VERSION = "0.11.0-v3-start-scene-commit"
+VERSION = "0.11.1-v3-pending-validation-diagnostics"
 LEGACY_SNAPSHOT_SCHEMA = "turn_revision_snapshot_v1"
 SNAPSHOT_SCHEMA = "turn_revision_snapshot_v2"
 SUPPORTED_SNAPSHOT_SCHEMAS = {LEGACY_SNAPSHOT_SCHEMA, SNAPSHOT_SCHEMA}
@@ -450,6 +451,7 @@ def integrity_report(session_id: str) -> dict[str, Any]:
         current = base.read_session_json(CURRENT_STATE_FILE, sid, default={})
         context = base.read_session_json(CONTEXT_SNAPSHOT_FILE, sid, default={})
         pending = runtime.get("pending_turn") if isinstance(runtime.get("pending_turn"), dict) else None
+        pending_validation = scene_validation.pending_validation_diagnostics(pending) if pending else None
         revision = int(runtime.get("state_revision") or 0)
         errors: list[dict[str, Any]] = []
         warnings: list[dict[str, Any]] = []
@@ -503,6 +505,14 @@ def integrity_report(session_id: str) -> dict[str, Any]:
                 warnings.append({"code": "rollback_snapshot_status_unexpected", "snapshot_status": snapshot.get("status")})
 
         if pending:
+            if pending_validation:
+                warnings.append({
+                    "code": "pending_scene_validation_failure",
+                    "turn_id": pending.get("turn_id"),
+                    "attempts": pending_validation.get("attempts"),
+                    "last_error_codes": (pending_validation.get("last_failure") or {}).get("error_codes", []),
+                    "message": "Canonical state is healthy; the preserved pending scene must be rewritten on the same turn_id, not repaired or discarded.",
+                })
             if not isinstance(context, dict) or context.get("turn_id") != pending.get("turn_id"):
                 warnings.append({
                     "code": "pending_context_not_built_or_not_current",
@@ -522,6 +532,8 @@ def integrity_report(session_id: str) -> dict[str, Any]:
             "state_revision": revision,
             "current_state_revision": current_revision,
             "pending_turn_id": pending.get("turn_id") if pending else None,
+            "pending_validation": pending_validation,
+            "session_corruption_detected": bool(errors),
             "last_transition": transition or None,
             "last_applied_turn_id": last_applied.get("turn_id"),
             "rollback_available": rollback_available,
@@ -532,5 +544,5 @@ def integrity_report(session_id: str) -> dict[str, Any]:
             "last_recovery_event": recovery_entries[-1] if recovery_entries else None,
             "errors": errors,
             "warnings": warnings,
-            "next_action": "waitForPlayerInput" if not errors else "repairSessionState",
+            "next_action": "repairSessionState" if errors else ("getPreflight" if pending else "waitForPlayerInput"),
         }

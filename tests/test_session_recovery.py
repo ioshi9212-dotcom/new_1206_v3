@@ -210,7 +210,7 @@ def test_integrity_report_detects_out_of_transaction_tampering(client: TestClien
 
 def test_openapi_exposes_integrity_and_rollback_actions(client: TestClient) -> None:
     schema = client.get("/openapi-actions.json").json()
-    assert schema["info"]["version"] == "0.11.0-v3-start-scene-commit"
+    assert schema["info"]["version"] == "0.11.1-v3-pending-validation-diagnostics"
     assert schema["paths"]["/api/v1/sessions/{session_id}/integrity"]["get"]["operationId"] == "getSessionIntegrity"
     rollback = schema["paths"]["/api/v1/sessions/{session_id}/rollback-last-turn"]["post"]
     assert rollback["operationId"] == "rollbackLastTurn"

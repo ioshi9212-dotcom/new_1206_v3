@@ -301,6 +301,58 @@ def _rejected(
     return result
 
 
+def _recorded_validation_failure(
+    sid: str,
+    turn_id: str,
+    runtime: dict[str, Any],
+    text: str,
+    *,
+    failure_stage: str,
+    error: str,
+    errors: list[dict[str, Any]],
+    warnings: list[dict[str, Any]] | None = None,
+    checks: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    result = {
+        "passed": False,
+        "protocol": scene_validation.PROTOCOL,
+        "runtime_version": RUNTIME_VERSION,
+        "errors": [dict(item) for item in errors if isinstance(item, dict)],
+        "warnings": [dict(item) for item in (warnings or []) if isinstance(item, dict)],
+        "checks": {"failure_stage": failure_stage, **(checks or {})},
+    }
+    attempt, updated_runtime, diagnostics = scene_validation.record_pending_failure(
+        sid,
+        runtime,
+        result,
+        failure_stage=failure_stage,
+        draft_text=text,
+    )
+    response = scene_validation.rewrite_response(
+        sid,
+        turn_id,
+        result,
+        attempt,
+        updated_runtime,
+        failure_stage=failure_stage,
+        diagnostics=diagnostics,
+    )
+    response["error"] = error
+    if failure_stage != "scene_gate":
+        # Preserve the established API distinction: prose/choice failures ask
+        # for a scene rewrite, while invalid state/time/memory/relationship
+        # payloads remain rejected corrections. Both keep the same pending turn
+        # and now persist exact diagnostics for recovery.
+        response["status"] = "rejected"
+        response["next_action"] = "applyTurnResult"
+        response["correction_required"] = True
+        response["repair_packet"]["instruction"] = (
+            "Correct only the rejected state/update payload, keep the same pending turn_id and frozen context, "
+            "then retry applyTurnResult. Never reset or discard the pending turn for this validation failure."
+        )
+    return response
+
+
 def _scene_text(body: dict[str, Any], payload: dict[str, Any]) -> str:
     for value in [
         body.get("visible_scene_text"), body.get("final_scene_text"), body.get("scene_text"),
@@ -1761,12 +1813,16 @@ def apply_turn_result_v3(session_id: str, body: dict[str, Any] | None = Body(def
             sid, body, payload, turn_id, text, pending=pending, snapshot=context_snapshot
         )
         if not scene_gate["passed"]:
-            return scene_validation.rewrite_response(
+            return _recorded_validation_failure(
                 sid,
                 turn_id,
-                scene_gate,
-                scene_validation.repair_attempt(body, payload),
                 runtime,
+                text,
+                failure_stage="scene_gate",
+                error="Scene prose or declared validation checks failed. Rewrite the same pending turn from the frozen snapshot.",
+                errors=scene_gate.get("errors", []),
+                warnings=scene_gate.get("warnings", []),
+                checks=scene_gate.get("checks", {}),
             )
 
         new_revision = current_revision + 1
@@ -1782,13 +1838,14 @@ def apply_turn_result_v3(session_id: str, body: dict[str, Any] | None = Body(def
         current_section = _find(payload, "current_state_patch", "current_state_changes", "current_state", "state_changes")
         direct_clock_key = _contains_direct_clock_key(current_section)
         if direct_clock_key:
-            return _rejected(
+            return _recorded_validation_failure(
                 sid,
-                "Clock fields are engine-owned. Use time_advance; direct date/time patches are blocked.",
-                turn_id=turn_id,
-                expected_turn_id=expected_turn_id,
-                next_action="applyTurnResult",
-                validation_errors=[{
+                turn_id,
+                runtime,
+                text,
+                failure_stage="current_state_patch",
+                error="Clock fields are engine-owned. Use time_advance; direct date/time patches are blocked.",
+                errors=[{
                     "code": "direct_clock_patch_blocked",
                     "field": direct_clock_key,
                     "message": "Use elapsed_minutes plus mode/reason/evidence instead of setting a clock field.",
@@ -1815,13 +1872,14 @@ def apply_turn_result_v3(session_id: str, body: dict[str, Any] | None = Body(def
             int(time_autonomy_audit.get("elapsed_minutes") or 0),
         ))
         if time_autonomy_errors:
-            return _rejected(
+            return _recorded_validation_failure(
                 sid,
-                "World time or NPC autonomy update was rejected. Correct the elapsed time, evidence, route, ETA or presence transition, then retry the same turn_id.",
-                turn_id=turn_id,
-                expected_turn_id=expected_turn_id,
-                next_action="applyTurnResult",
-                validation_errors=time_autonomy_errors,
+                turn_id,
+                runtime,
+                text,
+                failure_stage="world_time_and_npc_autonomy",
+                error="World time or NPC autonomy update was rejected. Correct the elapsed time, evidence, route, ETA or presence transition, then retry the same turn_id.",
+                errors=time_autonomy_errors,
             )
         current["session_id"] = sid
         current["last_player_input"] = str(pending.get("player_input") or "")
@@ -1863,13 +1921,14 @@ def apply_turn_result_v3(session_id: str, body: dict[str, Any] | None = Body(def
         )
         validation_errors = memory_errors + relationship_errors
         if validation_errors:
-            return _rejected(
+            return _recorded_validation_failure(
                 sid,
-                "Dynamic character state was rejected. Correct the evidence/source or loaded-character/pair scope, then retry the same turn_id.",
-                turn_id=turn_id,
-                expected_turn_id=expected_turn_id,
-                next_action="applyTurnResult",
-                validation_errors=validation_errors,
+                turn_id,
+                runtime,
+                text,
+                failure_stage="character_memory_and_relationships",
+                error="Dynamic character state was rejected. Correct the evidence/source or loaded-character/pair scope, then retry the same turn_id.",
+                errors=validation_errors,
             )
         changed.extend(memory_changed)
         changed.extend(relationship_changed)

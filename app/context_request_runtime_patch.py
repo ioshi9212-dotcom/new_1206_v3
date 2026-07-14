@@ -21,6 +21,7 @@ from typing import Any
 from fastapi import Body
 
 from app import compact as base
+from app import scene_validation
 from app import start_scene_commit
 
 app = base.app
@@ -1918,10 +1919,19 @@ def get_preflight(session_id: str) -> dict[str, Any]:
     pending = runtime.get("pending_turn") if isinstance(runtime.get("pending_turn"), dict) else None
     context_snapshot = base.read_session_json(CONTEXT_SNAPSHOT_FILE, sid, default={})
     snapshot_ready = bool(pending and _snapshot_matches_pending(context_snapshot, pending))
+    pending_validation = scene_validation.pending_validation_diagnostics(pending) if pending else None
     start_scene_required = bool(current.get("start_scene_exact_text_required") and not current.get("start_scene_completed"))
     if pending:
-        next_action = "getTurnContract"
-        writer_note = "Resume the protected pending turn_id. Do not replace it with another player input."
+        if pending_validation and snapshot_ready and context_snapshot.get("all_required_chunks_served"):
+            next_action = "rewriteSceneFromFrozenSnapshotAndRetryApply"
+            writer_note = (
+                "The session is healthy and the player input is preserved. Inspect pending_validation.last_failure.required_changes, "
+                "rewrite or fully regenerate the scene on this same turn_id and frozen snapshot, then retry applyTurnResult. "
+                "Never call repairSessionState and never reset/discard the pending turn for a validation failure."
+            )
+        else:
+            next_action = "getTurnContract"
+            writer_note = "Resume the protected pending turn_id. Do not replace it with another player input."
     elif start_scene_required:
         next_action = "getStartSceneText"
         writer_note = "Fetch the exact opening, commit it atomically, then show the committed visible_scene_text once and stop."
@@ -1940,6 +1950,7 @@ def get_preflight(session_id: str) -> dict[str, Any]:
             "base_revision": pending.get("base_revision"),
             "player_input": pending.get("player_input"),
         } if pending else None,
+        "pending_validation": pending_validation,
         "context_snapshot": {
             "context_snapshot_id": context_snapshot.get("context_snapshot_id"),
             "context_snapshot_sha256": context_snapshot.get("context_snapshot_sha256"),
